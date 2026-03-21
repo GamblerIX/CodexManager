@@ -12,9 +12,3 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.12"
-
-
-
-
-
-
