@@ -403,6 +403,26 @@ fn app_settings_set_persists_snapshot_and_password_hash() {
 }
 
 #[test]
+fn app_settings_get_disables_update_auto_check_by_default() {
+    with_temp_db(|db_path| {
+        let storage = Storage::open(db_path).expect("open storage");
+        storage
+            .delete_app_setting(codexmanager_service::APP_SETTING_UPDATE_AUTO_CHECK_KEY)
+            .expect("delete update auto check setting");
+        drop(storage);
+
+        let snapshot = codexmanager_service::app_settings_get().expect("get app settings");
+
+        assert_eq!(
+            snapshot
+                .get("updateAutoCheck")
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+    });
+}
+
+#[test]
 fn app_settings_set_preserves_dark_one_theme() {
     with_temp_db(|_| {
         let snapshot = codexmanager_service::app_settings_set(Some(&json!({
@@ -949,6 +969,13 @@ fn app_settings_get_seeds_full_env_override_snapshot() {
                 .and_then(|value| value.get("CODEXMANAGER_WEB_ROOT"))
                 .and_then(|value| value.as_str()),
             Some("")
+        );
+        assert_eq!(
+            snapshot
+                .get("envOverrides")
+                .and_then(|value| value.get("CODEXMANAGER_UPDATE_REPO"))
+                .and_then(|value| value.as_str()),
+            Some("GamblerIX/CodexManager")
         );
         assert!(snapshot
             .get("envOverrides")

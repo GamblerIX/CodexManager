@@ -3,7 +3,7 @@ use semver::Version;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub(super) const DEFAULT_UPDATE_REPO: &str = "qxcnm/Codex-Manager";
+pub(super) const DEFAULT_UPDATE_REPO: &str = "GamblerIX/CodexManager";
 pub(super) const PORTABLE_MARKER_FILE: &str = ".codexmanager-portable";
 pub(super) const USER_AGENT: &str = "CodexManager-Updater";
 
@@ -99,7 +99,25 @@ pub(super) fn resolve_github_token() -> Option<String> {
 mod tests {
     use semver::Version;
 
-    use super::{normalize_version, should_include_prerelease_updates_with_override};
+    use super::{
+        normalize_version, resolve_update_repo, should_include_prerelease_updates_with_override,
+        DEFAULT_UPDATE_REPO,
+    };
+
+    fn with_update_repo_env(value: Option<&str>, test: impl FnOnce()) {
+        let previous = std::env::var_os("CODEXMANAGER_UPDATE_REPO");
+        if let Some(value) = value {
+            std::env::set_var("CODEXMANAGER_UPDATE_REPO", value);
+        } else {
+            std::env::remove_var("CODEXMANAGER_UPDATE_REPO");
+        }
+        test();
+        if let Some(previous) = previous {
+            std::env::set_var("CODEXMANAGER_UPDATE_REPO", previous);
+        } else {
+            std::env::remove_var("CODEXMANAGER_UPDATE_REPO");
+        }
+    }
 
     #[test]
     fn prerelease_channel_defaults_to_stable_latest() {
@@ -109,7 +127,9 @@ mod tests {
         assert!(!should_include_prerelease_updates_with_override(
             &stable, None
         ));
-        assert!(!should_include_prerelease_updates_with_override(&beta, None));
+        assert!(!should_include_prerelease_updates_with_override(
+            &beta, None
+        ));
         assert!(should_include_prerelease_updates_with_override(
             &stable,
             Some(true)
@@ -124,5 +144,13 @@ mod tests {
     fn normalize_version_accepts_v_prefix() {
         let version = normalize_version(" v0.1.8 ").expect("normalized version");
         assert_eq!(version, Version::parse("0.1.8").expect("expected version"));
+    }
+
+    #[test]
+    fn update_repo_defaults_to_migrated_repository() {
+        assert_eq!(DEFAULT_UPDATE_REPO, "GamblerIX/CodexManager");
+        with_update_repo_env(None, || {
+            assert_eq!(resolve_update_repo(), "GamblerIX/CodexManager");
+        });
     }
 }

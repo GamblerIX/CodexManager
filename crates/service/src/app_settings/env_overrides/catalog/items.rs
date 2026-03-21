@@ -293,7 +293,7 @@ pub(crate) const ENV_OVERRIDE_CATALOG: &[EnvOverrideCatalogItem] = &[
         "更新仓库",
         ENV_OVERRIDE_SCOPE_DESKTOP,
         ENV_OVERRIDE_APPLY_MODE_RESTART,
-        "qxcnm/Codex-Manager",
+        "GamblerIX/CodexManager",
     ),
     EnvOverrideCatalogItem::new(
         "CODEXMANAGER_UPSTREAM_BASE_URL",

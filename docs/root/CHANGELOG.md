@@ -136,13 +136,13 @@
 ### Changed
 - 账号管理页操作区整合为单一“账号操作”下拉菜单，替代右侧多按钮堆叠，界面更简洁。
 
-[Unreleased]: https://github.com/qxcnm/Codex-Manager/compare/v0.1.12...HEAD
-[0.1.12]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.12
-[0.1.11]: https://github.com/qxcnm/Codex-Manager/compare/v0.1.10...v0.1.11
-[0.1.10]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.10
-[0.1.9]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.9
-[0.1.8]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.8
-[0.1.7]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.7
-[0.1.6]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.6
-[0.1.5]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.5
-[0.1.4]: https://github.com/qxcnm/Codex-Manager/releases/tag/v0.1.4
+[Unreleased]: https://github.com/GamblerIX/CodexManager/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.12
+[0.1.11]: https://github.com/GamblerIX/CodexManager/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.10
+[0.1.9]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.9
+[0.1.8]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.8
+[0.1.7]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.7
+[0.1.6]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.6
+[0.1.5]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.5
+[0.1.4]: https://github.com/GamblerIX/CodexManager/releases/tag/v0.1.4

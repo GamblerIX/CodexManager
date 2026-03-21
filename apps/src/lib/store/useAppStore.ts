@@ -20,7 +20,7 @@ export const useAppStore = create<AppState>((set) => ({
     addr: "localhost:48760",
   },
   appSettings: {
-    updateAutoCheck: true,
+    updateAutoCheck: false,
     closeToTrayOnClose: false,
     closeToTraySupported: false,
     lowTransparency: false,

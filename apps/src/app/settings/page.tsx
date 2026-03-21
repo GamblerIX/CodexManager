@@ -258,7 +258,7 @@ function normalizeUpdateStatusSummary(payload: unknown): UpdateStatusSummary {
 
 function buildReleaseUrl(summary: UpdateCheckSummary | null): string {
   if (!summary?.repo) {
-    return "https://github.com/qxcnm/Codex-Manager/releases";
+    return "https://github.com/GamblerIX/CodexManager/releases";
   }
   const normalizedTag = summary.releaseTag || (summary.latestVersion ? `v${summary.latestVersion}` : "");
   if (!normalizedTag) {

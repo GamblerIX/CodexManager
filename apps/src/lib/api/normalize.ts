@@ -476,7 +476,7 @@ export function normalizeEnvOverrideCatalog(payload: unknown): EnvOverrideCatalo
 export function normalizeAppSettings(payload: unknown): AppSettings {
   const source = asObject(payload);
   return {
-    updateAutoCheck: asBoolean(source.updateAutoCheck, true),
+    updateAutoCheck: asBoolean(source.updateAutoCheck, false),
     closeToTrayOnClose: asBoolean(source.closeToTrayOnClose, false),
     closeToTraySupported: asBoolean(source.closeToTraySupported, false),
     lowTransparency: asBoolean(source.lowTransparency, false),

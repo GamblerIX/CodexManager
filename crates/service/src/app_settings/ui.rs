@@ -40,8 +40,8 @@ fn normalize_ui_appearance_preset(raw: Option<&str>) -> String {
 
 pub fn current_update_auto_check_enabled() -> bool {
     get_persisted_app_setting(APP_SETTING_UPDATE_AUTO_CHECK_KEY)
-        .map(|value| parse_bool_with_default(&value, true))
-        .unwrap_or(true)
+        .map(|value| parse_bool_with_default(&value, false))
+        .unwrap_or(false)
 }
 
 pub fn set_update_auto_check_enabled(enabled: bool) -> Result<bool, String> {
