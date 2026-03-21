@@ -182,13 +182,13 @@ async function invokeWebRpc<T>(
 ): Promise<T> {
   const descriptor = WEB_COMMAND_MAP[method];
   if (!descriptor) {
-    throw new Error("当前 Web / Docker 版暂不支持该操作");
+    throw new Error("当前 Web 版暂不支持该操作");
   }
   if (descriptor.direct) {
     return (await descriptor.direct(params, options)) as T;
   }
   if (!descriptor.rpcMethod) {
-    throw new Error("当前 Web / Docker 版暂不支持该操作");
+    throw new Error("当前 Web 版暂不支持该操作");
   }
   return postWebRpc<T>(
     descriptor.rpcMethod,

@@ -488,7 +488,7 @@ export default function SettingsPage() {
       ? "下载更新"
       : "检查更新";
   const updateActionDescription = !isDesktopRuntime
-    ? "Web / Docker 版不提供桌面应用更新检查"
+    ? "Web 版不提供桌面应用更新检查"
     : hasPreparedUpdate
       ? "更新包已下载完成，点击后确认替换当前版本"
       : canDownloadUpdate

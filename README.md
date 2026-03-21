@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/logo.png" alt="CodexManager Logo" width="220" />
+  <img src="../../assets/logo/logo.png" alt="CodexManager Logo" width="220" />
 </p>
 
 <h1 align="center">CodexManager</h1>
@@ -34,10 +34,10 @@
 ## 首页导览
 | 你要做什么 | 直接进入 |
 | --- | --- |
-| 首次启动、部署、Docker、macOS 放行 | [运行与部署指南](docs/report/20260310122606850_运行与部署指南.md) |
-| 配置端口、代理、数据库、Web 密码、环境变量 | [环境变量与运行配置](docs/report/20260309195355187_环境变量与运行配置说明.md) |
-| 排查账号不命中、导入失败、挑战拦截、请求异常 | [FAQ 与账号命中规则](docs/report/20260310122606852_FAQ与账号命中规则.md) |
-| 本地构建、打包、发版、脚本调用 | [构建发布与脚本说明](docs/release/20260310122606851_构建发布与脚本说明.md) |
+| 首次启动、Service 版部署、macOS 放行 | [运行与部署指南](../report/20260310122606850_运行与部署指南.md) |
+| 配置端口、代理、数据库、Web 密码、环境变量 | [环境变量与运行配置](../report/20260309195355187_环境变量与运行配置说明.md) |
+| 排查账号不命中、导入失败、挑战拦截、请求异常 | [FAQ 与账号命中规则](../report/20260310122606852_FAQ与账号命中规则.md) |
+| 本地构建、打包、发版、脚本调用 | [构建发布与脚本说明](../release/20260310122606851_构建发布与脚本说明.md) |
 
 ## 最近变更
 - 当前最新版本：`v0.1.12`（2026-03-20）
@@ -69,11 +69,11 @@
 - 本地网关：为 CLI 和第三方工具提供统一 OpenAI 兼容入口
 
 ## 截图
-![仪表盘](assets/images/dashboard.png)
-![账号管理](assets/images/accounts.png)
-![平台 Key](assets/images/platform-key.png)
-![日志视图](assets/images/log.png)
-![设置页](assets/images/themes.png)
+![仪表盘](../../assets/images/dashboard.png)
+![账号管理](../../assets/images/accounts.png)
+![平台 Key](../../assets/images/platform-key.png)
+![日志视图](../../assets/images/log.png)
+![设置页](../../assets/images/themes.png)
 
 ## 快速开始
 1. 启动桌面端，点击“启动服务”。
@@ -86,7 +86,7 @@
 - Windows：`%APPDATA%\\com.codexmanager.desktop\\codexmanager.db`
 - macOS：`~/Library/Application Support/com.codexmanager.desktop/codexmanager.db`
 - Linux：`~/.local/share/com.codexmanager.desktop/codexmanager.db`
-- 如需调整数据库、代理、监听地址等运行配置，可继续查看 [环境变量与运行配置](docs/report/20260309195355187_环境变量与运行配置说明.md)。
+- 如需调整数据库、代理、监听地址等运行配置，可继续查看 [环境变量与运行配置](../report/20260309195355187_环境变量与运行配置说明.md)。
 
 ## 页面展示
 ### 桌面端
@@ -105,19 +105,19 @@
 - 架构说明：[ARCHITECTURE.md](ARCHITECTURE.md)
 - 测试基线：[TESTING.md](TESTING.md)
 - 安全说明：[SECURITY.md](SECURITY.md)
-- 文档索引：[docs/README.md](docs/README.md)
+- 文档索引：[docs/README.md](../README.md)
 
 ## 专题页面
 | 页面 | 内容 |
 | --- | --- |
-| [运行与部署指南](docs/report/20260310122606850_运行与部署指南.md) | 首次启动、Docker、Service 版、macOS 放行 |
-| [环境变量与运行配置](docs/report/20260309195355187_环境变量与运行配置说明.md) | 应用配置、代理、监听地址、数据库、Web 安全 |
-| [FAQ 与账号命中规则](docs/report/20260310122606852_FAQ与账号命中规则.md) | 账号命中、挑战拦截、导入导出、常见异常 |
-| [最小排障手册](docs/report/20260307234235414_最小排障手册.md) | 快速定位服务启动、请求转发、模型刷新异常 |
-| [构建发布与脚本说明](docs/release/20260310122606851_构建发布与脚本说明.md) | 本地构建、Tauri 打包、Release workflow、脚本参数 |
-| [发布与产物说明](docs/release/20260309195355216_发布与产物说明.md) | 各平台发版产物、命名、是否 pre-release |
-| [脚本与发布职责对照](docs/report/20260309195735631_脚本与发布职责对照.md) | 各脚本负责什么、什么场景该用哪个 |
-| [协议兼容回归清单](docs/report/20260309195735632_协议兼容回归清单.md) | `/v1/chat/completions`、`/v1/responses`、tools 回归项 |
+| [运行与部署指南](../report/20260310122606850_运行与部署指南.md) | 首次启动、Service 版、macOS 放行 |
+| [环境变量与运行配置](../report/20260309195355187_环境变量与运行配置说明.md) | 应用配置、代理、监听地址、数据库、Web 安全 |
+| [FAQ 与账号命中规则](../report/20260310122606852_FAQ与账号命中规则.md) | 账号命中、挑战拦截、导入导出、常见异常 |
+| [最小排障手册](../report/20260307234235414_最小排障手册.md) | 快速定位服务启动、请求转发、模型刷新异常 |
+| [构建发布与脚本说明](../release/20260310122606851_构建发布与脚本说明.md) | 本地构建、Tauri 打包、Release workflow、脚本参数 |
+| [发布与产物说明](../release/20260309195355216_发布与产物说明.md) | 各平台发版产物、命名、是否 pre-release |
+| [脚本与发布职责对照](../report/20260309195735631_脚本与发布职责对照.md) | 各脚本负责什么、什么场景该用哪个 |
+| [协议兼容回归清单](../report/20260309195735632_协议兼容回归清单.md) | `/v1/chat/completions`、`/v1/responses`、tools 回归项 |
 | [CHANGELOG.md](CHANGELOG.md) | 最新发版内容、未发版更新与完整版本历史 |
 
 ## 目录结构
@@ -158,8 +158,8 @@
 如果这个项目对你有帮助，欢迎请作者喝杯咖啡，支持后续维护与更新。
 
 <p align="left">
-  <img src="assets/images/wechatPay.jpg" alt="微信赞助码" width="180" />
-  <img src="assets/images/AliPay.jpg" alt="支付宝赞助码" width="180" />
+  <img src="../../assets/images/wechatPay.jpg" alt="微信赞助码" width="180" />
+  <img src="../../assets/images/AliPay.jpg" alt="支付宝赞助码" width="180" />
 </p>
 
 ## 联系方式
@@ -168,4 +168,4 @@
 
 - 交流群：答案是项目名：CodexManager
 
-  <img src="assets/images/qq_group.jpg" alt="交流群二维码" width="280" />
+  <img src="../../assets/images/qq_group.jpg" alt="交流群二维码" width="280" />

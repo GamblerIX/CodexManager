@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/logo.png" alt="CodexManager Logo" width="220" />
+  <img src="../../assets/logo/logo.png" alt="CodexManager Logo" width="220" />
 </p>
 
 <h1 align="center">CodexManager</h1>
@@ -33,10 +33,10 @@ A local desktop + service toolkit for managing Codex-compatible accounts, usage,
 ## Landing Guide
 | What you want to do | Go here |
 | --- | --- |
-| First launch, deployment, Docker, macOS allowlist | [Runtime and deployment guide](docs/report/20260310122606850_运行与部署指南.md) |
-| Configure port, proxy, database, Web password, environment variables | [Environment variables and runtime config](docs/report/20260309195355187_环境变量与运行配置说明.md) |
-| Troubleshoot account selection, import failures, challenge blocks, request issues | [FAQ and account-hit rules](docs/report/20260310122606852_FAQ与账号命中规则.md) |
-| Build locally, package, publish, run scripts | [Build, release, and script guide](docs/release/20260310122606851_构建发布与脚本说明.md) |
+| First launch, Service deployment, macOS allowlist | [Runtime and deployment guide](../report/20260310122606850_运行与部署指南.md) |
+| Configure port, proxy, database, Web password, environment variables | [Environment variables and runtime config](../report/20260309195355187_环境变量与运行配置说明.md) |
+| Troubleshoot account selection, import failures, challenge blocks, request issues | [FAQ and account-hit rules](../report/20260310122606852_FAQ与账号命中规则.md) |
+| Build locally, package, publish, run scripts | [Build, release, and script guide](../release/20260310122606851_构建发布与脚本说明.md) |
 
 ## Recent Changes
 - Current latest version: `v0.1.12` (2026-03-20)
@@ -66,11 +66,11 @@ A local desktop + service toolkit for managing Codex-compatible accounts, usage,
 - Local OpenAI-compatible gateway for CLI and third-party tools
 
 ## Screenshots
-![Dashboard](assets/images/dashboard.png)
-![Accounts](assets/images/accounts.png)
-![Platform Key](assets/images/platform-key.png)
-![Logs](assets/images/log.png)
-![Settings](assets/images/themes.png)
+![Dashboard](../../assets/images/dashboard.png)
+![Accounts](../../assets/images/accounts.png)
+![Platform Key](../../assets/images/platform-key.png)
+![Logs](../../assets/images/log.png)
+![Settings](../../assets/images/themes.png)
 
 ## Quick Start
 1. Launch the desktop app and click `Start Service`.
@@ -95,19 +95,19 @@ A local desktop + service toolkit for managing Codex-compatible accounts, usage,
 - Architecture: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Testing baseline: [TESTING.md](TESTING.md)
 - Security: [SECURITY.md](SECURITY.md)
-- Docs index: [docs/README.md](docs/README.md)
+- Docs index: [docs/README.md](../README.md)
 
 ## Topic Pages
 | Page | Content |
 | --- | --- |
-| [Runtime and deployment guide](docs/report/20260310122606850_运行与部署指南.md) | First launch, Docker, Service edition, macOS allowlist |
-| [Environment variables and runtime config](docs/report/20260309195355187_环境变量与运行配置说明.md) | App config, proxy, listen address, database, Web security |
-| [FAQ and account-hit rules](docs/report/20260310122606852_FAQ与账号命中规则.md) | Account hit logic, challenge blocks, import/export, common issues |
-| [Minimal troubleshooting guide](docs/report/20260307234235414_最小排障手册.md) | Fast path for service startup, forwarding, and model refresh issues |
-| [Build, release, and script guide](docs/release/20260310122606851_构建发布与脚本说明.md) | Local build, Tauri packaging, Release workflow, script flags |
-| [Release assets guide](docs/release/20260309195355216_发布与产物说明.md) | Platform artifacts, naming, release vs pre-release |
-| [Script and release responsibility matrix](docs/report/20260309195735631_脚本与发布职责对照.md) | Which script owns which step |
-| [Protocol regression checklist](docs/report/20260309195735632_协议兼容回归清单.md) | `/v1/chat/completions`, `/v1/responses`, tools regression items |
+| [Runtime and deployment guide](../report/20260310122606850_运行与部署指南.md) | First launch, Service edition, macOS allowlist |
+| [Environment variables and runtime config](../report/20260309195355187_环境变量与运行配置说明.md) | App config, proxy, listen address, database, Web security |
+| [FAQ and account-hit rules](../report/20260310122606852_FAQ与账号命中规则.md) | Account hit logic, challenge blocks, import/export, common issues |
+| [Minimal troubleshooting guide](../report/20260307234235414_最小排障手册.md) | Fast path for service startup, forwarding, and model refresh issues |
+| [Build, release, and script guide](../release/20260310122606851_构建发布与脚本说明.md) | Local build, Tauri packaging, Release workflow, script flags |
+| [Release assets guide](../release/20260309195355216_发布与产物说明.md) | Platform artifacts, naming, release vs pre-release |
+| [Script and release responsibility matrix](../report/20260309195735631_脚本与发布职责对照.md) | Which script owns which step |
+| [Protocol regression checklist](../report/20260309195735632_协议兼容回归清单.md) | `/v1/chat/completions`, `/v1/responses`, tools regression items |
 | [CHANGELOG.md](CHANGELOG.md) | Latest release notes, unreleased changes, and full version history |
 
 ## Project Structure
@@ -148,8 +148,8 @@ A local desktop + service toolkit for managing Codex-compatible accounts, usage,
 If this project helps you, you are welcome to support its ongoing maintenance and updates.
 
 <p align="left">
-  <img src="assets/images/wechatPay.jpg" alt="WeChat sponsor QR code" width="180" />
-  <img src="assets/images/AliPay.jpg" alt="Alipay sponsor QR code" width="180" />
+  <img src="../../assets/images/wechatPay.jpg" alt="WeChat sponsor QR code" width="180" />
+  <img src="../../assets/images/AliPay.jpg" alt="Alipay sponsor QR code" width="180" />
 </p>
 
 ## Contact Information
@@ -157,4 +157,4 @@ If this project helps you, you are welcome to support its ongoing maintenance an
 - WeChat: ProsperGao
 - Community Group:
 
-  <img src="assets/images/qq_group.jpg" alt="Community Group QR Code" width="280" />
+  <img src="../../assets/images/qq_group.jpg" alt="Community Group QR Code" width="280" />

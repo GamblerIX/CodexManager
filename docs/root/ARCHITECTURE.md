@@ -7,7 +7,7 @@
 CodexManager 由两类运行模式组成：
 
 1. 桌面模式：Tauri 桌面端 + 本地 service 进程
-2. Service 模式：独立 service + web UI，可用于服务器、Docker 或无桌面环境
+2. Service 模式：独立 service + web UI，可用于服务器或无桌面环境
 
 统一目标：
 
@@ -30,7 +30,6 @@ CodexManager 由两类运行模式组成：
 │  ├─ web/                # Web UI 服务壳，可嵌入前端静态资源
 │  └─ start/              # Service 一键启动器（拉起 service + web）
 ├─ scripts/               # 本地构建、统一版本、测试探针、发布辅助脚本
-├─ docker/                # Dockerfile 与 compose 配置
 ├─ assets/                # README 图片、Logo 等静态资源
 └─ .github/workflows/     # CI / release workflow
 ```
