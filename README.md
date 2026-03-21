@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../assets/logo/logo.png" alt="CodexManager Logo" width="220" />
+  <img src="assets/logo/logo.png" alt="CodexManager Logo" width="220" />
 </p>
 
 <h1 align="center">CodexManager</h1>
@@ -7,19 +7,10 @@
 <p align="center">本地桌面端 + 服务进程的 Codex 账号管理器+网关转发</p>
 
 <p align="center">
-  <a href="README.en.md">English</a>|
-  <a href="#赞助支持">赞助支持</a>
+  <a href="docs/root/README.en.md">English</a>
 </p>
 
-
-
 本地桌面端 + 服务进程的 Codex 账号池管理器，用于统一管理账号、用量与平台 Key，并提供本地网关能力。
-
-## 源码说明：
-> 本产品完全由本人指挥+AI打造 Codex（98%） Gemini (2%) 如果在使用过程中产生问题请友好交流，因为开源只是觉得有人能用的上，基本功能也没什么问题，不喜勿喷。
-> 其次是本人没有足够的环境来验证每个包都有没有问题，本人也要上班(我只是个穷逼买不起mac之类的)，本人只保证win的桌面端的可用性，如果其他端有问题，请在交流群反馈或者在充分测试后提交Issues，有时间我自会处理
-> 最后感谢各位使用者在交流群反馈的各个平台的问题和参与的部分测试。
-
 
 ## 免责声明
 
@@ -34,10 +25,10 @@
 ## 首页导览
 | 你要做什么 | 直接进入 |
 | --- | --- |
-| 首次启动、Service 版部署、macOS 放行 | [运行与部署指南](../report/20260310122606850_运行与部署指南.md) |
-| 配置端口、代理、数据库、Web 密码、环境变量 | [环境变量与运行配置](../report/20260309195355187_环境变量与运行配置说明.md) |
-| 排查账号不命中、导入失败、挑战拦截、请求异常 | [FAQ 与账号命中规则](../report/20260310122606852_FAQ与账号命中规则.md) |
-| 本地构建、打包、发版、脚本调用 | [构建发布与脚本说明](../release/20260310122606851_构建发布与脚本说明.md) |
+| 首次启动、Service 版部署、macOS 放行 | [运行与部署指南](docs/report/20260310122606850_运行与部署指南.md) |
+| 配置端口、代理、数据库、Web 密码、环境变量 | [环境变量与运行配置](docs/report/20260309195355187_环境变量与运行配置说明.md) |
+| 排查账号不命中、导入失败、挑战拦截、请求异常 | [FAQ 与账号命中规则](docs/report/20260310122606852_FAQ与账号命中规则.md) |
+| 本地构建、打包、发版、脚本调用 | [构建发布与脚本说明](docs/release/20260310122606851_构建发布与脚本说明.md) |
 
 ## 最近变更
 - 当前最新版本：`v0.1.12`（2026-03-20）
@@ -47,7 +38,7 @@
 - 平台密钥新增服务等级配置：`跟随请求`、`Fast`、`Flex`。其中 `Fast` 会映射为上游 `priority`，`Flex` 会直传为 `flex`；桌面端创建 / 编辑链路也已修正，现在能正常保存与回显。
 - 设置页补回了服务监听切换，支持在 `localhost` 与 `0.0.0.0` 之间切换；“检查更新”按钮现在只会在手动点击时显示加载状态，不会再被静默自动检查误触发。
 - Web / 桌面交互层也做了补丁修复：Web 非首页刷新不再误下载文件，复制 API Key / 登录链接在缺少 `navigator.clipboard.writeText` 的环境下也会自动降级复制。
-- 发布链路继续统一收口：版本已提升到 `0.1.12`，workspace、前端包、Tauri 桌面端、版本一致性校验脚本和 README 版本说明已同步对齐。完整历史请看 [CHANGELOG.md](CHANGELOG.md)。
+- 发布链路继续统一收口：版本已提升到 `0.1.12`，workspace、前端包、Tauri 桌面端、版本一致性校验脚本和 README 版本说明已同步对齐。完整历史请看 [CHANGELOG.md](docs/root/CHANGELOG.md)。
 
 ### 近期提交摘要
 - `cb990a1`：完善账号清理入口与文档收口。账号操作菜单补齐封禁清理入口与数量展示，README / 文档入口同步收紧到当前主线路径。
@@ -69,11 +60,11 @@
 - 本地网关：为 CLI 和第三方工具提供统一 OpenAI 兼容入口
 
 ## 截图
-![仪表盘](../../assets/images/dashboard.png)
-![账号管理](../../assets/images/accounts.png)
-![平台 Key](../../assets/images/platform-key.png)
-![日志视图](../../assets/images/log.png)
-![设置页](../../assets/images/themes.png)
+![仪表盘](assets/images/dashboard.png)
+![账号管理](assets/images/accounts.png)
+![平台 Key](assets/images/platform-key.png)
+![日志视图](assets/images/log.png)
+![设置页](assets/images/themes.png)
 
 ## 快速开始
 1. 启动桌面端，点击“启动服务”。
@@ -86,7 +77,7 @@
 - Windows：`%APPDATA%\\com.codexmanager.desktop\\codexmanager.db`
 - macOS：`~/Library/Application Support/com.codexmanager.desktop/codexmanager.db`
 - Linux：`~/.local/share/com.codexmanager.desktop/codexmanager.db`
-- 如需调整数据库、代理、监听地址等运行配置，可继续查看 [环境变量与运行配置](../report/20260309195355187_环境变量与运行配置说明.md)。
+- 如需调整数据库、代理、监听地址等运行配置，可继续查看 [环境变量与运行配置](docs/report/20260309195355187_环境变量与运行配置说明.md)。
 
 ## 页面展示
 ### 桌面端
@@ -99,26 +90,26 @@
 - `codexmanager-web`：提供浏览器管理页面
 - `codexmanager-start`：一键拉起 service + web
 
-## 常用文档
-- 版本历史：[CHANGELOG.md](CHANGELOG.md)
-- 协作约定：[CONTRIBUTING.md](CONTRIBUTING.md)
-- 架构说明：[ARCHITECTURE.md](ARCHITECTURE.md)
-- 测试基线：[TESTING.md](TESTING.md)
-- 安全说明：[SECURITY.md](SECURITY.md)
-- 文档索引：[docs/README.md](../README.md)
+## 必读文档
+- 版本历史：[CHANGELOG.md](docs/root/CHANGELOG.md)
+- 协作约定：[CONTRIBUTING.md](docs/root/CONTRIBUTING.md)
+- 架构说明：[ARCHITECTURE.md](docs/root/ARCHITECTURE.md)
+- 测试基线：[TESTING.md](docs/root/TESTING.md)
+- 安全说明：[SECURITY.md](docs/root/SECURITY.md)
+- 文档索引：[README.md](README.md)
 
 ## 专题页面
 | 页面 | 内容 |
 | --- | --- |
-| [运行与部署指南](../report/20260310122606850_运行与部署指南.md) | 首次启动、Service 版、macOS 放行 |
-| [环境变量与运行配置](../report/20260309195355187_环境变量与运行配置说明.md) | 应用配置、代理、监听地址、数据库、Web 安全 |
-| [FAQ 与账号命中规则](../report/20260310122606852_FAQ与账号命中规则.md) | 账号命中、挑战拦截、导入导出、常见异常 |
-| [最小排障手册](../report/20260307234235414_最小排障手册.md) | 快速定位服务启动、请求转发、模型刷新异常 |
-| [构建发布与脚本说明](../release/20260310122606851_构建发布与脚本说明.md) | 本地构建、Tauri 打包、Release workflow、脚本参数 |
-| [发布与产物说明](../release/20260309195355216_发布与产物说明.md) | 各平台发版产物、命名、是否 pre-release |
-| [脚本与发布职责对照](../report/20260309195735631_脚本与发布职责对照.md) | 各脚本负责什么、什么场景该用哪个 |
-| [协议兼容回归清单](../report/20260309195735632_协议兼容回归清单.md) | `/v1/chat/completions`、`/v1/responses`、tools 回归项 |
-| [CHANGELOG.md](CHANGELOG.md) | 最新发版内容、未发版更新与完整版本历史 |
+| [运行与部署指南](docs/report/20260310122606850_运行与部署指南.md) | 首次启动、Service 版、macOS 放行 |
+| [环境变量与运行配置](docs/report/20260309195355187_环境变量与运行配置说明.md) | 应用配置、代理、监听地址、数据库、Web 安全 |
+| [FAQ 与账号命中规则](docs/report/20260310122606852_FAQ与账号命中规则.md) | 账号命中、挑战拦截、导入导出、常见异常 |
+| [最小排障手册](docs/report/20260307234235414_最小排障手册.md) | 快速定位服务启动、请求转发、模型刷新异常 |
+| [构建发布与脚本说明](docs/release/20260310122606851_构建发布与脚本说明.md) | 本地构建、Tauri 打包、Release workflow、脚本参数 |
+| [发布与产物说明](docs/release/20260309195355216_发布与产物说明.md) | 各平台发版产物、命名、是否 pre-release |
+| [脚本与发布职责对照](docs/report/20260309195735631_脚本与发布职责对照.md) | 各脚本负责什么、什么场景该用哪个 |
+| [协议兼容回归清单](docs/report/20260309195735632_协议兼容回归清单.md) | `/v1/chat/completions`、`/v1/responses`、tools 回归项 |
+| [CHANGELOG.md](docs/root/CHANGELOG.md) | 最新发版内容、未发版更新与完整版本历史 |
 
 ## 目录结构
 ```text
@@ -140,32 +131,3 @@
 ## 鸣谢与参考项目
 
 - Codex（OpenAI）：本项目在请求链路、登录语义与上游兼容行为上参考了该项目的实现与源码结构 <https://github.com/openai/codex>
-
-## 认可社区
-<p align="left">
-  <a href="https://linux.do/t/topic/1688401" title="LINUX DO">
-    <img
-      src="https://cdn3.linux.do/original/4X/d/1/4/d146c68151340881c884d95e0da4acdf369258c6.png"
-      alt="LINUX DO"
-      width="100"
-      hight="100"
-    />
-  </a>
-</p>
-
-## 赞助支持
-
-如果这个项目对你有帮助，欢迎请作者喝杯咖啡，支持后续维护与更新。
-
-<p align="left">
-  <img src="../../assets/images/wechatPay.jpg" alt="微信赞助码" width="180" />
-  <img src="../../assets/images/AliPay.jpg" alt="支付宝赞助码" width="180" />
-</p>
-
-## 联系方式
-- 公众号：七线牛马
-- 微信： ProsperGao
-
-- 交流群：答案是项目名：CodexManager
-
-  <img src="../../assets/images/qq_group.jpg" alt="交流群二维码" width="280" />
