@@ -59,7 +59,7 @@ fn classify_fallback_non_success_kind(
         return "cloudflare_blocked";
     }
     if let Some(hint) =
-        crate::gateway::summarize_upstream_error_hint_from_body(fallback_status, body)
+        super::super::super::summarize_upstream_error_hint_from_body(fallback_status, body)
     {
         if hint.contains("Cloudflare") {
             return "cloudflare_challenge";
@@ -69,7 +69,7 @@ fn classify_fallback_non_success_kind(
         }
     }
     if content_type
-        .map(crate::gateway::is_html_content_type)
+        .map(super::super::super::is_html_content_type)
         .unwrap_or(false)
     {
         return "html";
@@ -106,7 +106,8 @@ fn summarize_fallback_non_success(
         .or_else(|| extract_response_header(headers, OAI_REQUEST_ID_HEADER));
     let cf_ray = extract_response_header(headers, CF_RAY_HEADER);
     let auth_error = extract_response_header(headers, AUTH_ERROR_HEADER);
-    let identity_error_code = crate::gateway::extract_identity_error_code_from_headers(headers);
+    let identity_error_code =
+        super::super::super::extract_identity_error_code_from_headers(headers);
     let content_type = extract_response_header(headers, "content-type");
     let kind = classify_fallback_non_success_kind(
         fallback_status,
@@ -116,12 +117,13 @@ fn summarize_fallback_non_success(
         auth_error.as_deref(),
         identity_error_code.as_deref(),
     );
-    let body_hint = crate::gateway::summarize_upstream_error_hint_from_body(fallback_status, body)
-        .or_else(|| {
-            let trimmed = std::str::from_utf8(body).ok()?.trim().to_string();
-            (!trimmed.is_empty()).then_some(trimmed)
-        })
-        .unwrap_or_else(|| "unknown error".to_string());
+    let body_hint =
+        super::super::super::summarize_upstream_error_hint_from_body(fallback_status, body)
+            .or_else(|| {
+                let trimmed = std::str::from_utf8(body).ok()?.trim().to_string();
+                (!trimmed.is_empty()).then_some(trimmed)
+            })
+            .unwrap_or_else(|| "unknown error".to_string());
 
     let mut details = vec![
         format!("kind={kind}"),
@@ -155,7 +157,8 @@ fn summarize_fallback_non_success_headers_only(
         .or_else(|| extract_response_header(headers, OAI_REQUEST_ID_HEADER));
     let cf_ray = extract_response_header(headers, CF_RAY_HEADER);
     let auth_error = extract_response_header(headers, AUTH_ERROR_HEADER);
-    let identity_error_code = crate::gateway::extract_identity_error_code_from_headers(headers);
+    let identity_error_code =
+        super::super::super::extract_identity_error_code_from_headers(headers);
     let content_type = extract_response_header(headers, "content-type");
     let kind = classify_fallback_non_success_kind(
         fallback_status,

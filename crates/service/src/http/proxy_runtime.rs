@@ -1,14 +1,14 @@
 use axum::body::{to_bytes, Body};
 use axum::extract::State;
-use axum::http::{header, Request as HttpRequest, Response, StatusCode};
-use axum::routing::{any, post};
+use axum::http::{header, HeaderMap, Request as HttpRequest, Response, StatusCode};
+use axum::routing::{any, get, post};
 use axum::Router;
 use reqwest::Client;
 use std::io;
 
 use crate::http::proxy_bridge::run_proxy_server;
 use crate::http::proxy_request::{build_target_url, filter_request_headers};
-use crate::http::proxy_response::{merge_upstream_headers, text_error_response};
+use crate::http::proxy_response::{merge_upstream_headers, text_error_response, text_response};
 
 #[derive(Clone)]
 struct ProxyState {
@@ -32,6 +32,29 @@ fn build_backend_base_url(backend_addr: &str) -> String {
 
 fn build_local_backend_client() -> Result<Client, reqwest::Error> {
     Client::builder().no_proxy().build()
+}
+
+fn shutdown_request_authorized(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-codexmanager-rpc-token")
+        .and_then(|value| value.to_str().ok())
+        .map(crate::rpc_auth_token_matches)
+        .unwrap_or(false)
+}
+
+async fn shutdown_handler(State(state): State<ProxyState>, headers: HeaderMap) -> Response<Body> {
+    if !shutdown_request_authorized(&headers) {
+        let message = "rpc auth required";
+        log_proxy_error(StatusCode::UNAUTHORIZED, "/__shutdown", message);
+        return text_error_response(StatusCode::UNAUTHORIZED, message);
+    }
+
+    let backend_addr = state
+        .backend_base_url
+        .strip_prefix("http://")
+        .unwrap_or(state.backend_base_url.as_str());
+    crate::request_shutdown(backend_addr);
+    text_response(StatusCode::OK, "shutdown")
 }
 
 async fn proxy_handler(
@@ -112,6 +135,7 @@ async fn proxy_handler(
 fn build_front_proxy_app(state: ProxyState) -> Router {
     Router::new()
         .route("/rpc", post(crate::http::rpc_endpoint::handle_rpc_http))
+        .route("/__shutdown", get(shutdown_handler))
         .fallback(any(proxy_handler))
         .with_state(state)
 }

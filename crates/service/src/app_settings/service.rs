@@ -32,10 +32,20 @@ fn normalize_saved_service_addr(raw: Option<&str>) -> Result<String, String> {
     if value.is_empty() {
         return Err("service address is empty".to_string());
     }
-    if value.contains(':') {
-        return Ok(value.to_string());
+    if value.parse::<u16>().is_ok() {
+        return Ok(format!("localhost:{value}"));
     }
-    Ok(format!("localhost:{value}"))
+    if let Some((host, port)) = value.rsplit_once(':') {
+        let host = host.trim();
+        let port = port.trim();
+        if host.is_empty() || port.is_empty() {
+            return Err("service address must include host and port".to_string());
+        }
+        port.parse::<u16>()
+            .map_err(|_| "service address has invalid port".to_string())?;
+        return Ok(format!("{host}:{port}"));
+    }
+    Err("service address must include port".to_string())
 }
 
 fn current_env_service_addr() -> Option<String> {

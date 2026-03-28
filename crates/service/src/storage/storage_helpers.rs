@@ -204,7 +204,7 @@ fn take_cached_storage(path: &str) -> Option<Storage> {
 }
 
 #[cfg(test)]
-fn clear_storage_cache_for_tests() {
+pub(crate) fn clear_storage_cache_for_tests() {
     STORAGE_CACHE.with(|cell| {
         *cell.borrow_mut() = None;
     });
@@ -222,7 +222,7 @@ fn record_storage_open_for_tests(path: &str) {
 }
 
 #[cfg(test)]
-fn storage_open_count_for_tests(path: &str) -> usize {
+pub(crate) fn storage_open_count_for_tests(path: &str) -> usize {
     let Some(mutex) = STORAGE_OPEN_COUNTS.get() else {
         return 0;
     };
@@ -234,7 +234,7 @@ fn storage_open_count_for_tests(path: &str) -> usize {
 }
 
 #[cfg(test)]
-fn clear_storage_open_count_for_tests(path: &str) {
+pub(crate) fn clear_storage_open_count_for_tests(path: &str) {
     let Some(mutex) = STORAGE_OPEN_COUNTS.get() else {
         return;
     };

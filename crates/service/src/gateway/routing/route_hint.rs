@@ -1,5 +1,5 @@
 use super::route_quality::route_health_score;
-use codexmanager_core::storage::{Account, Token};
+use codexmanager_core::storage::{Account, Storage, Token};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -56,7 +56,18 @@ struct RouteRoundRobinState {
     maintenance_tick: u64,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn apply_route_strategy(
+    candidates: &mut [(Account, Token)],
+    key_id: &str,
+    model: Option<&str>,
+) {
+    let storage = crate::storage_helpers::open_storage();
+    apply_route_strategy_with_storage(storage.as_deref(), candidates, key_id, model);
+}
+
+pub(crate) fn apply_route_strategy_with_storage(
+    storage: Option<&Storage>,
     candidates: &mut [(Account, Token)],
     key_id: &str,
     model: Option<&str>,
@@ -71,14 +82,12 @@ pub(crate) fn apply_route_strategy(
     }
 
     let mode = route_mode();
-    if mode == ROUTE_MODE_BALANCED_ROUND_ROBIN {
-        let start = next_start_index(key_id, model, candidates.len());
-        if start > 0 {
-            candidates.rotate_left(start);
-        }
+    if super::should_prioritize_free_account_for_model(model) {
+        apply_free_account_priority_route_strategy(storage, candidates, key_id, model, mode);
+        return;
     }
 
-    apply_health_p2c(candidates, key_id, model, mode);
+    apply_route_strategy_with_scope(candidates, key_id, model, mode, None);
 }
 
 fn rotate_to_manual_preferred_account(candidates: &mut [(Account, Token)]) -> bool {
@@ -99,6 +108,96 @@ fn rotate_to_manual_preferred_account(candidates: &mut [(Account, Token)]) -> bo
         candidates.rotate_left(index);
     }
     true
+}
+
+fn apply_free_account_priority_route_strategy(
+    storage: Option<&Storage>,
+    candidates: &mut [(Account, Token)],
+    key_id: &str,
+    model: Option<&str>,
+    mode: u8,
+) {
+    let has_free = candidates
+        .iter()
+        .any(|candidate| is_free_plan_candidate(storage, candidate));
+    let has_paid = candidates
+        .iter()
+        .any(|candidate| !is_free_plan_candidate(storage, candidate));
+    if !has_free || !has_paid {
+        apply_route_strategy_with_scope(candidates, key_id, model, mode, None);
+        return;
+    }
+
+    let mut free_candidates = Vec::new();
+    let mut paid_candidates = Vec::new();
+    for candidate in candidates.iter().cloned() {
+        if is_free_plan_candidate(storage, &candidate) {
+            free_candidates.push(candidate);
+        } else {
+            paid_candidates.push(candidate);
+        }
+    }
+
+    apply_route_strategy_with_scope(
+        free_candidates.as_mut_slice(),
+        key_id,
+        model,
+        mode,
+        Some("free"),
+    );
+    apply_route_strategy_with_scope(
+        paid_candidates.as_mut_slice(),
+        key_id,
+        model,
+        mode,
+        Some("paid"),
+    );
+
+    let reordered = free_candidates
+        .into_iter()
+        .chain(paid_candidates)
+        .collect::<Vec<_>>();
+    for (slot, candidate) in candidates.iter_mut().zip(reordered.into_iter()) {
+        *slot = candidate;
+    }
+}
+
+fn apply_route_strategy_with_scope(
+    candidates: &mut [(Account, Token)],
+    key_id: &str,
+    model: Option<&str>,
+    mode: u8,
+    scope: Option<&str>,
+) {
+    if candidates.len() <= 1 {
+        return;
+    }
+
+    if mode == ROUTE_MODE_BALANCED_ROUND_ROBIN {
+        let start = next_start_index_scoped(key_id, model, candidates.len(), scope);
+        if start > 0 {
+            candidates.rotate_left(start);
+        }
+    }
+
+    apply_health_p2c_scoped(candidates, key_id, model, mode, scope);
+}
+
+fn is_free_plan_candidate(storage: Option<&Storage>, candidate: &(Account, Token)) -> bool {
+    if let Some(storage) = storage {
+        return crate::account_plan::is_free_or_single_window_account(
+            storage,
+            candidate.0.id.as_str(),
+            &candidate.1,
+        );
+    }
+
+    let token = &candidate.1;
+    crate::account_plan::is_free_plan_type(
+        crate::account_plan::extract_plan_type_from_id_token(&token.access_token).as_deref(),
+    ) || crate::account_plan::is_free_plan_type(
+        crate::account_plan::extract_plan_type_from_id_token(&token.id_token).as_deref(),
+    )
 }
 
 fn route_mode() -> u8 {
@@ -190,7 +289,17 @@ pub(crate) fn clear_manual_preferred_account_if(account_id: &str) -> bool {
     false
 }
 
+#[cfg(test)]
 fn next_start_index(key_id: &str, model: Option<&str>, candidate_count: usize) -> usize {
+    next_start_index_scoped(key_id, model, candidate_count, None)
+}
+
+fn next_start_index_scoped(
+    key_id: &str,
+    model: Option<&str>,
+    candidate_count: usize,
+    scope: Option<&str>,
+) -> usize {
     let lock = ROUTE_STATE.get_or_init(|| Mutex::new(RouteRoundRobinState::default()));
     let mut state_guard = crate::lock_utils::lock_recover(lock, "route_state");
     let state = &mut *state_guard;
@@ -199,7 +308,7 @@ fn next_start_index(key_id: &str, model: Option<&str>, candidate_count: usize) -
 
     let ttl = route_state_ttl();
     let capacity = route_state_capacity();
-    let key = key_model_key(key_id, model);
+    let key = key_model_key(key_id, model, scope);
     remove_entry_if_expired(&mut state.next_start_by_key_model, key.as_str(), now, ttl);
     let start = {
         let entry = state
@@ -219,11 +328,12 @@ fn next_start_index(key_id: &str, model: Option<&str>, candidate_count: usize) -
     start
 }
 
-fn apply_health_p2c(
+fn apply_health_p2c_scoped(
     candidates: &mut [(Account, Token)],
     key_id: &str,
     model: Option<&str>,
     mode: u8,
+    scope: Option<&str>,
 ) {
     if !route_health_p2c_enabled() {
         return;
@@ -232,7 +342,7 @@ fn apply_health_p2c(
     if window <= 1 {
         return;
     }
-    let Some(challenger_idx) = p2c_challenger_index(key_id, model, window) else {
+    let Some(challenger_idx) = p2c_challenger_index_scoped(key_id, model, window, scope) else {
         return;
     };
     let current_score = route_health_score(candidates[0].0.id.as_str());
@@ -243,10 +353,20 @@ fn apply_health_p2c(
     }
 }
 
+#[cfg(test)]
 fn p2c_challenger_index(
     key_id: &str,
     model: Option<&str>,
     candidate_count: usize,
+) -> Option<usize> {
+    p2c_challenger_index_scoped(key_id, model, candidate_count, None)
+}
+
+fn p2c_challenger_index_scoped(
+    key_id: &str,
+    model: Option<&str>,
+    candidate_count: usize,
+    scope: Option<&str>,
 ) -> Option<usize> {
     if candidate_count < 2 {
         return None;
@@ -259,7 +379,7 @@ fn p2c_challenger_index(
 
     let ttl = route_state_ttl();
     let capacity = route_state_capacity();
-    let key = key_model_key(key_id, model);
+    let key = key_model_key(key_id, model, scope);
     remove_entry_if_expired(&mut state.p2c_nonce_by_key_model, key.as_str(), now, ttl);
     let nonce = {
         let entry = state
@@ -371,15 +491,19 @@ fn find_oldest_key<T: Copy>(map: &HashMap<String, RouteStateEntry<T>>) -> Option
         .map(|(key, _)| key.clone())
 }
 
-fn key_model_key(key_id: &str, model: Option<&str>) -> String {
-    format!(
+fn key_model_key(key_id: &str, model: Option<&str>, scope: Option<&str>) -> String {
+    let base = format!(
         "{}|{}",
         key_id.trim(),
         model
             .map(str::trim)
             .filter(|v| !v.is_empty())
             .unwrap_or("-")
-    )
+    );
+    match scope.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(scope) => format!("{base}|{scope}"),
+        None => base,
+    }
 }
 
 pub(super) fn reload_from_env() {

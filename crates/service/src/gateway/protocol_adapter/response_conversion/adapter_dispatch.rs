@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::gateway::request_helpers::is_html_content_type;
+use super::super::super::request_helpers::is_html_content_type;
 
 use super::super::ResponseAdapter;
 use super::json_conversion::convert_openai_json_to_anthropic;

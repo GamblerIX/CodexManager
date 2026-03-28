@@ -6,7 +6,7 @@ use crate::account_status::{
     deactivation_reason_from_message, mark_account_unavailable_for_deactivation_error,
     mark_account_unavailable_for_refresh_token_error,
 };
-use crate::usage_snapshot_store::apply_status_from_snapshot;
+use crate::usage::snapshot_store::apply_status_from_snapshot;
 use codexmanager_core::storage::{now_ts, Account, Storage, UsageSnapshotRecord};
 use std::time::{SystemTime, UNIX_EPOCH};
 

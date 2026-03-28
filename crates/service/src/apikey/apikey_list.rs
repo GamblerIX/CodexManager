@@ -20,7 +20,8 @@ pub(crate) fn read_api_keys() -> Result<Vec<ApiKeySummary>, String> {
             protocol_type: key.protocol_type,
             auth_scheme: key.auth_scheme,
             upstream_base_url: key.upstream_base_url,
-            static_headers_json: key.static_headers_json,
+            // 列表接口只返回非敏感摘要，静态头里的上游密钥需通过显式读取接口获取。
+            static_headers_json: None,
             status: key.status,
             created_at: key.created_at,
             last_used_at: key.last_used_at,

@@ -401,6 +401,57 @@ fn rpc_app_settings_can_roundtrip_free_account_max_model() {
 }
 
 #[test]
+fn rpc_app_settings_can_roundtrip_free_account_preferred_models() {
+    let _ctx = RpcTestContext::new("rpc-app-settings-free-preferred-models");
+    let set_server = codexmanager_service::start_one_shot_server().expect("start server");
+
+    let set_req = JsonRpcRequest {
+        id: 33,
+        method: "appSettings/set".to_string(),
+        params: Some(serde_json::json!({
+            "freeAccountPreferredModels": ["gpt-5.4-mini", "gpt-5.2"]
+        })),
+    };
+    let set_json = serde_json::to_string(&set_req).expect("serialize");
+    let set_resp = post_rpc(&set_server.addr, &set_json);
+    let set_result = set_resp.get("result").expect("result");
+    assert_eq!(
+        set_result
+            .get("freeAccountPreferredModels")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["gpt-5.4-mini", "gpt-5.2"])
+    );
+
+    let get_server = codexmanager_service::start_one_shot_server().expect("start server");
+    let get_req = JsonRpcRequest {
+        id: 34,
+        method: "appSettings/get".to_string(),
+        params: None,
+    };
+    let get_json = serde_json::to_string(&get_req).expect("serialize");
+    let get_resp = post_rpc(&get_server.addr, &get_json);
+    let get_result = get_resp.get("result").expect("result");
+    assert_eq!(
+        get_result
+            .get("freeAccountPreferredModels")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["gpt-5.4-mini", "gpt-5.2"])
+    );
+}
+
+#[test]
 fn rpc_account_list_active_filter_uses_backend_filtered_pagination() {
     let ctx = RpcTestContext::new("rpc-account-list-active-filter");
     let storage = Storage::open(ctx.db_path()).expect("open db");
@@ -1146,6 +1197,64 @@ fn rpc_apikey_update_model_updates_name_with_chinese() {
     assert_eq!(
         updated.get("name").and_then(|value| value.as_str()),
         Some("中文名称")
+    );
+}
+
+#[test]
+fn rpc_apikey_list_redacts_static_headers_json() {
+    let ctx = RpcTestContext::new("rpc-apikey-list-redacts-static-headers");
+    let storage = Storage::open(ctx.db_path()).expect("open db");
+    storage.init().expect("init schema");
+    storage
+        .insert_api_key(&codexmanager_core::storage::ApiKey {
+            id: "gk-redacted-headers".to_string(),
+            name: Some("azure".to_string()),
+            model_slug: Some("gpt-4.1".to_string()),
+            reasoning_effort: None,
+            service_tier: None,
+            client_type: "codex".to_string(),
+            protocol_type: "azure_openai".to_string(),
+            auth_scheme: "authorization_bearer".to_string(),
+            upstream_base_url: Some("https://example.openai.azure.com".to_string()),
+            static_headers_json: Some(r#"{"api-key":"super-secret"}"#.to_string()),
+            key_hash: "hash-redacted-headers".to_string(),
+            status: "active".to_string(),
+            created_at: now_ts(),
+            last_used_at: None,
+        })
+        .expect("insert api key");
+
+    let server = codexmanager_service::start_one_shot_server().expect("start server");
+    let list_req = JsonRpcRequest {
+        id: 76,
+        method: "apikey/list".to_string(),
+        params: None,
+    };
+    let list_json = serde_json::to_string(&list_req).expect("serialize apikey list");
+    let list_resp = post_rpc(&server.addr, &list_json);
+    let items = list_resp
+        .get("result")
+        .and_then(|value| value.get("items"))
+        .and_then(|value| value.as_array())
+        .expect("apikey items");
+    let key = items
+        .iter()
+        .find(|value| {
+            value
+                .get("id")
+                .and_then(|item| item.as_str())
+                .map(|id| id == "gk-redacted-headers")
+                .unwrap_or(false)
+        })
+        .expect("api key item");
+
+    assert!(
+        key.get("staticHeadersJson").is_none()
+            || key
+                .get("staticHeadersJson")
+                .map(|value| value.is_null())
+                .unwrap_or(false),
+        "static headers leaked in apikey/list: {key}"
     );
 }
 

@@ -1,8 +1,10 @@
-use super::{build_backend_base_url, build_local_backend_client, proxy_handler, ProxyState};
+use super::{
+    build_backend_base_url, build_front_proxy_app, build_local_backend_client, proxy_handler,
+    ProxyState,
+};
 use axum::body::{to_bytes, Body};
 use axum::extract::State;
-use axum::http::{Request as HttpRequest, StatusCode};
-use reqwest::Client;
+use axum::http::{header, Request as HttpRequest, StatusCode};
 
 struct EnvGuard {
     key: &'static str,
@@ -13,6 +15,12 @@ impl EnvGuard {
     fn set(key: &'static str, value: &str) -> Self {
         let original = std::env::var_os(key);
         std::env::set_var(key, value);
+        Self { key, original }
+    }
+
+    fn clear(key: &'static str) -> Self {
+        let original = std::env::var_os(key);
+        std::env::remove_var(key);
         Self { key, original }
     }
 }
@@ -43,15 +51,20 @@ fn local_backend_client_builds_without_system_proxy() {
 #[test]
 fn request_without_content_length_over_limit_returns_413() {
     let _guard = EnvGuard::set("CODEXMANAGER_FRONT_PROXY_MAX_BODY_BYTES", "8");
+    let _http_proxy_guard = EnvGuard::clear("HTTP_PROXY");
+    let _https_proxy_guard = EnvGuard::clear("HTTPS_PROXY");
+    let _all_proxy_guard = EnvGuard::clear("ALL_PROXY");
     crate::gateway::reload_runtime_config_from_env();
+    let _ = crate::gateway::front_proxy_max_body_bytes();
 
+    let client = build_local_backend_client().expect("local backend client");
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime");
     let state = ProxyState {
         backend_base_url: "http://127.0.0.1:1".to_string(),
-        client: Client::new(),
+        client: client.clone(),
     };
     let request = HttpRequest::builder()
         .method("POST")
@@ -70,13 +83,19 @@ fn request_without_content_length_over_limit_returns_413() {
 
 #[test]
 fn backend_send_failure_returns_502() {
+    let _http_proxy_guard = EnvGuard::clear("HTTP_PROXY");
+    let _https_proxy_guard = EnvGuard::clear("HTTPS_PROXY");
+    let _all_proxy_guard = EnvGuard::clear("ALL_PROXY");
+    crate::gateway::reload_runtime_config_from_env();
+    let _ = crate::gateway::front_proxy_max_body_bytes();
+    let client = build_local_backend_client().expect("local backend client");
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime");
     let state = ProxyState {
         backend_base_url: "http://127.0.0.1:1".to_string(),
-        client: Client::new(),
+        client: client.clone(),
     };
     let request = HttpRequest::builder()
         .method("GET")
@@ -86,6 +105,7 @@ fn backend_send_failure_returns_502() {
 
     let response = runtime.block_on(proxy_handler(State(state), request));
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let headers = response.headers().clone();
     let error_code = response
         .headers()
         .get(crate::error_codes::ERROR_CODE_HEADER_NAME)
@@ -95,9 +115,90 @@ fn backend_send_failure_returns_502() {
         .block_on(to_bytes(response.into_body(), usize::MAX))
         .expect("read body");
     let text = String::from_utf8(body.to_vec()).expect("utf8");
-    assert_eq!(error_code.as_deref(), Some("backend_proxy_error"));
+    assert_eq!(
+        error_code.as_deref(),
+        Some("backend_proxy_error"),
+        "headers={headers:?}, body={text}"
+    );
     assert!(
         text.contains("backend proxy error:"),
         "unexpected body: {text}"
     );
+}
+
+#[test]
+fn shutdown_route_requires_rpc_token() {
+    crate::clear_shutdown_flag();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let status = runtime.block_on(async {
+        let app = build_front_proxy_app(ProxyState {
+            backend_base_url: "http://127.0.0.1:1".to_string(),
+            client: build_local_backend_client().expect("local backend client"),
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("request client");
+        let response = client
+            .get(format!("http://{addr}/__shutdown"))
+            .send()
+            .await
+            .expect("send request");
+        server.abort();
+        response.status()
+    });
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    crate::clear_shutdown_flag();
+}
+
+#[test]
+fn shutdown_route_accepts_rpc_token() {
+    crate::clear_shutdown_flag();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let (status, body) = runtime.block_on(async {
+        let app = build_front_proxy_app(ProxyState {
+            backend_base_url: "http://127.0.0.1:1".to_string(),
+            client: build_local_backend_client().expect("local backend client"),
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("request client");
+        let response = client
+            .get(format!("http://{addr}/__shutdown"))
+            .header(
+                header::HeaderName::from_static("x-codexmanager-rpc-token"),
+                crate::rpc_auth_token(),
+            )
+            .send()
+            .await
+            .expect("send request");
+        let status = response.status();
+        let body = response.text().await.expect("read response body");
+        server.abort();
+        (status, body)
+    });
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "shutdown");
+    crate::clear_shutdown_flag();
 }

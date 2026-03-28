@@ -150,7 +150,7 @@ fn classify_compact_non_success_kind(
         }
     }
     if content_type
-        .map(crate::gateway::is_html_content_type)
+        .map(super::super::is_html_content_type)
         .unwrap_or(false)
     {
         return "html";
@@ -246,7 +246,7 @@ fn compact_non_success_body_should_be_normalized(
         return true;
     }
     if content_type
-        .map(crate::gateway::is_html_content_type)
+        .map(super::super::is_html_content_type)
         .unwrap_or(false)
     {
         return true;
@@ -319,7 +319,7 @@ fn respond_synthesized_compact_error_body(
     cf_ray: Option<&str>,
     trace_id: Option<&str>,
 ) -> UpstreamResponseBridgeResult {
-    let response = crate::gateway::error_response::terminal_text_response(
+    let response = super::super::error_response::terminal_text_response(
         status_code,
         message.as_str(),
         trace_id,
@@ -449,7 +449,7 @@ pub(crate) fn respond_with_upstream(
     let upstream_cf_ray = first_upstream_header(upstream.headers(), &[CF_RAY_HEADER_NAME]);
     let upstream_auth_error = first_upstream_header(upstream.headers(), &[AUTH_ERROR_HEADER_NAME]);
     let upstream_identity_error_code =
-        crate::gateway::extract_identity_error_code_from_headers(upstream.headers());
+        super::super::extract_identity_error_code_from_headers(upstream.headers());
     let upstream_content_type = upstream
         .headers()
         .get(reqwest::header::CONTENT_TYPE)

@@ -6,7 +6,7 @@ use tiny_http::Response;
 use tiny_http::Server;
 use url::Url;
 
-use crate::auth_tokens::complete_login;
+use super::tokens::complete_login;
 use crate::storage_helpers::open_storage;
 
 pub(crate) fn resolve_redirect_uri() -> Option<String> {

@@ -37,7 +37,10 @@ fn send_shutdown_request(addr: &str) -> std::io::Result<()> {
     let mut stream = TcpStream::connect(addr)?;
     let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
     let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
-    let request = format!("GET /__shutdown HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let request = format!(
+        "GET /__shutdown HTTP/1.1\r\nHost: {addr}\r\nx-codexmanager-rpc-token: {}\r\nConnection: close\r\n\r\n",
+        crate::rpc_auth_token()
+    );
     stream.write_all(request.as_bytes())?;
     Ok(())
 }

@@ -1,5 +1,7 @@
 use super::*;
 use std::sync::MutexGuard;
+use std::thread;
+use tiny_http::{Header, Response, Server, StatusCode};
 
 fn test_guard() -> MutexGuard<'static, ()> {
     gateway_runtime_test_guard()
@@ -32,6 +34,38 @@ impl Drop for EnvGuard {
             std::env::remove_var(self.key);
         }
     }
+}
+
+fn spawn_mock_proxy_server(
+    response_body: &str,
+) -> (
+    String,
+    std::sync::mpsc::Receiver<Option<String>>,
+    thread::JoinHandle<()>,
+) {
+    let server = Server::http("127.0.0.1:0").expect("start mock proxy server");
+    let addr = format!("http://{}", server.server_addr());
+    let response_body = response_body.to_string();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = thread::spawn(move || {
+        let request = server
+            .recv_timeout(Duration::from_secs(3))
+            .expect("receive proxy request");
+        let Some(request) = request else {
+            tx.send(None).expect("send missing proxy request");
+            return;
+        };
+        tx.send(Some(request.url().to_string()))
+            .expect("send proxy request url");
+        let response = Response::from_string(response_body)
+            .with_status_code(StatusCode(200))
+            .with_header(
+                Header::from_bytes("Content-Type", "text/plain")
+                    .expect("content-type header"),
+            );
+        request.respond(response).expect("respond proxy request");
+    });
+    (addr, rx, handle)
 }
 
 #[test]
@@ -152,6 +186,36 @@ fn set_upstream_proxy_url_normalizes_socks_scheme() {
 }
 
 #[test]
+fn build_upstream_client_uses_environment_http_proxy_when_explicit_proxy_is_unset() {
+    let _guard = test_guard();
+    let (proxy_url, proxy_requests, proxy_handle) = spawn_mock_proxy_server("proxied");
+    let _upstream_proxy_guard = EnvGuard::clear(ENV_UPSTREAM_PROXY_URL);
+    let _connect_timeout_guard = EnvGuard::set(ENV_UPSTREAM_CONNECT_TIMEOUT_SECS, "1");
+    let _http_proxy_guard = EnvGuard::set("HTTP_PROXY", &proxy_url);
+    let _http_proxy_lower_guard = EnvGuard::set("http_proxy", &proxy_url);
+    let _https_proxy_guard = EnvGuard::clear("HTTPS_PROXY");
+    let _https_proxy_lower_guard = EnvGuard::clear("https_proxy");
+    let _all_proxy_guard = EnvGuard::clear("ALL_PROXY");
+    let _all_proxy_lower_guard = EnvGuard::clear("all_proxy");
+    let _no_proxy_guard = EnvGuard::clear("NO_PROXY");
+    let _no_proxy_lower_guard = EnvGuard::clear("no_proxy");
+
+    reload_from_env();
+
+    let response_result = build_upstream_client_with_proxy(None)
+        .get("http://example.invalid/proxy-check")
+        .send();
+    let proxied_url = proxy_requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("receive proxy observation");
+    proxy_handle.join().expect("join proxy thread");
+
+    let response = response_result.expect("request should succeed through env proxy");
+    assert_eq!(proxied_url.as_deref(), Some("http://example.invalid/proxy-check"));
+    assert_eq!(response.text().expect("read proxy response body"), "proxied");
+}
+
+#[test]
 fn set_upstream_stream_timeout_ms_updates_env_and_cache() {
     let _guard = test_guard();
     let _guard = EnvGuard::set(ENV_UPSTREAM_STREAM_TIMEOUT_MS, "1800000");
@@ -173,12 +237,55 @@ fn set_upstream_stream_timeout_ms_updates_env_and_cache() {
 }
 
 #[test]
+fn reload_from_env_defaults_user_agent_version_to_0_116_0() {
+    let _guard = test_guard();
+    let _guard = EnvGuard::clear(ENV_UPSTREAM_PROXY_URL);
+
+    reload_from_env();
+
+    assert_eq!(current_codex_user_agent_version(), "0.116.0");
+    assert!(current_codex_user_agent().contains("codex_cli_rs/0.116.0"));
+}
+
+#[test]
+fn reload_from_env_parses_free_account_preferred_models() {
+    let _guard = test_guard();
+    let _guard = EnvGuard::set(
+        ENV_FREE_ACCOUNT_PREFERRED_MODELS,
+        "gpt-5.4-mini, gpt-5.2 , gpt-5.4-mini",
+    );
+
+    reload_from_env();
+
+    assert_eq!(
+        current_free_account_preferred_models(),
+        vec!["gpt-5.4-mini".to_string(), "gpt-5.2".to_string()]
+    );
+    assert!(should_prioritize_free_account_for_model(Some(
+        "gpt-5.4-mini"
+    )));
+    assert!(!should_prioritize_free_account_for_model(Some("gpt-5.4")));
+}
+
+#[test]
 fn normalize_model_slug_maps_legacy_gpt_5_4_pro_to_gpt_5_4() {
     let _guard = test_guard();
 
     let actual = normalize_model_slug("gpt-5.4-pro").expect("normalize model");
 
     assert_eq!(actual, "gpt-5.4");
+}
+
+#[test]
+fn should_prioritize_free_account_for_model_normalizes_legacy_aliases() {
+    let _guard = test_guard();
+    let _guard = EnvGuard::set(ENV_FREE_ACCOUNT_PREFERRED_MODELS, "gpt-5.4");
+
+    reload_from_env();
+
+    assert!(should_prioritize_free_account_for_model(Some(
+        "gpt-5.4-pro"
+    )));
 }
 
 #[test]
@@ -191,7 +298,7 @@ fn normalize_model_slug_accepts_auto() {
 }
 
 #[test]
-fn set_originator_updates_env_and_dynamic_user_agent() {
+fn set_originator_updates_env_and_wire_originator() {
     let _guard = test_guard();
     let _guard = EnvGuard::set(ENV_ORIGINATOR, "codex_cli_rs");
 
@@ -199,12 +306,37 @@ fn set_originator_updates_env_and_dynamic_user_agent() {
 
     assert_eq!(applied, "codex_cli_rs_windows");
     assert_eq!(current_originator(), "codex_cli_rs_windows");
+    assert_eq!(current_wire_originator(), "codex_cli_rs_windows");
     assert_eq!(
         std::env::var(ENV_ORIGINATOR).ok().as_deref(),
         Some("codex_cli_rs_windows")
     );
-    let expected_prefix = format!("codex_cli_rs/{}", current_codex_user_agent_version());
+    let expected_prefix = format!(
+        "codex_cli_rs_windows/{}",
+        current_codex_user_agent_version()
+    );
     assert!(current_codex_user_agent().contains(expected_prefix.as_str()));
+}
+
+#[test]
+fn set_originator_accepts_legacy_user_agent_delimiters() {
+    let _guard = test_guard();
+
+    let applied = set_originator("codex cli (desktop)").expect("accept legacy wire originator");
+
+    assert_eq!(applied, "codex cli (desktop)");
+    assert_eq!(current_originator(), "codex cli (desktop)");
+    assert_eq!(current_wire_originator(), "codex cli (desktop)");
+    assert!(current_codex_user_agent().contains("codex cli (desktop)/"));
+}
+
+#[test]
+fn set_originator_rejects_control_characters() {
+    let _guard = test_guard();
+
+    let err = set_originator("codex_cli_rs\r\nbad").expect_err("reject invalid wire originator");
+
+    assert_eq!(err, "originator contains control characters");
 }
 
 #[test]

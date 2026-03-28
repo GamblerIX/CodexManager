@@ -110,8 +110,8 @@ mod tests {
             })
             .expect("insert usage");
 
-        let original = crate::gateway::current_free_account_max_model();
-        crate::gateway::set_free_account_max_model("gpt-5.2").expect("set free model");
+        let original = super::super::super::super::current_free_account_max_model();
+        super::super::super::super::set_free_account_max_model("gpt-5.2").expect("set free model");
 
         let account = Account {
             id: "acc-free".to_string(),
@@ -127,7 +127,7 @@ mod tests {
         };
         let actual = free_account_model_override(&storage, &account, &token);
 
-        let _ = crate::gateway::set_free_account_max_model(&original);
+        let _ = super::super::super::super::set_free_account_max_model(&original);
 
         assert_eq!(actual.as_deref(), Some("gpt-5.2"));
     }
@@ -174,8 +174,8 @@ mod tests {
             })
             .expect("insert usage");
 
-        let original = crate::gateway::current_free_account_max_model();
-        crate::gateway::set_free_account_max_model("gpt-5.2").expect("set free model");
+        let original = super::super::super::super::current_free_account_max_model();
+        super::super::super::super::set_free_account_max_model("gpt-5.2").expect("set free model");
 
         let account = Account {
             id: "acc-weekly".to_string(),
@@ -191,7 +191,7 @@ mod tests {
         };
         let actual = free_account_model_override(&storage, &account, &token);
 
-        let _ = crate::gateway::set_free_account_max_model(&original);
+        let _ = super::super::super::super::set_free_account_max_model(&original);
 
         assert_eq!(actual.as_deref(), Some("gpt-5.2"));
     }
@@ -238,8 +238,8 @@ mod tests {
             })
             .expect("insert usage");
 
-        let original = crate::gateway::current_free_account_max_model();
-        crate::gateway::set_free_account_max_model("auto").expect("set free model");
+        let original = super::super::super::super::current_free_account_max_model();
+        super::super::super::super::set_free_account_max_model("auto").expect("set free model");
 
         let account = Account {
             id: "acc-auto".to_string(),
@@ -255,7 +255,7 @@ mod tests {
         };
         let actual = free_account_model_override(&storage, &account, &token);
 
-        let _ = crate::gateway::set_free_account_max_model(&original);
+        let _ = super::super::super::super::set_free_account_max_model(&original);
 
         assert_eq!(actual, None);
     }

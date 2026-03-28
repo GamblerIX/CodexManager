@@ -1,7 +1,7 @@
 use codexmanager_core::rpc::types::UsageSnapshotResult;
 
+use super::read::usage_snapshot_result_from_record;
 use crate::storage_helpers::open_storage;
-use crate::usage_read::usage_snapshot_result_from_record;
 
 pub(crate) fn read_usage_snapshots() -> Result<Vec<UsageSnapshotResult>, String> {
     // 读取所有账号最新用量

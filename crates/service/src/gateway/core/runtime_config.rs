@@ -1,6 +1,7 @@
 use codexmanager_core::auth::DEFAULT_ORIGINATOR;
 use codexmanager_core::auth::{DEFAULT_CLIENT_ID, DEFAULT_ISSUER};
 use reqwest::blocking::Client;
+use reqwest::header::HeaderValue;
 use reqwest::Proxy;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
@@ -25,6 +26,7 @@ static STRICT_REQUEST_PARAM_ALLOWLIST: AtomicBool =
 static ENABLE_REQUEST_COMPRESSION: AtomicBool = AtomicBool::new(DEFAULT_ENABLE_REQUEST_COMPRESSION);
 static UPSTREAM_PROXY_URL: OnceLock<RwLock<Option<String>>> = OnceLock::new();
 static FREE_ACCOUNT_MAX_MODEL: OnceLock<RwLock<String>> = OnceLock::new();
+static FREE_ACCOUNT_PREFERRED_MODELS: OnceLock<RwLock<Vec<String>>> = OnceLock::new();
 static ORIGINATOR: OnceLock<RwLock<String>> = OnceLock::new();
 static CODEX_USER_AGENT_VERSION: OnceLock<RwLock<String>> = OnceLock::new();
 static RESIDENCY_REQUIREMENT: OnceLock<RwLock<Option<String>>> = OnceLock::new();
@@ -43,7 +45,7 @@ const DEFAULT_REQUEST_GATE_WAIT_TIMEOUT_MS: u64 = 300;
 const DEFAULT_TRACE_BODY_PREVIEW_MAX_BYTES: usize = 0;
 const DEFAULT_FRONT_PROXY_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_FREE_ACCOUNT_MAX_MODEL: &str = "auto";
-const DEFAULT_CODEX_USER_AGENT_VERSION: &str = "0.101.0";
+const DEFAULT_CODEX_USER_AGENT_VERSION: &str = "0.116.0";
 const MAX_UPSTREAM_PROXY_POOL_SIZE: usize = 5;
 
 const ENV_REQUEST_GATE_WAIT_TIMEOUT_MS: &str = "CODEXMANAGER_REQUEST_GATE_WAIT_TIMEOUT_MS";
@@ -60,6 +62,7 @@ const ENV_TOKEN_EXCHANGE_ISSUER: &str = "CODEXMANAGER_ISSUER";
 const ENV_PROXY_LIST: &str = "CODEXMANAGER_PROXY_LIST";
 const ENV_UPSTREAM_PROXY_URL: &str = "CODEXMANAGER_UPSTREAM_PROXY_URL";
 const ENV_FREE_ACCOUNT_MAX_MODEL: &str = "CODEXMANAGER_FREE_ACCOUNT_MAX_MODEL";
+const ENV_FREE_ACCOUNT_PREFERRED_MODELS: &str = "CODEXMANAGER_FREE_ACCOUNT_PREFERRED_MODELS";
 const ENV_ORIGINATOR: &str = "CODEXMANAGER_ORIGINATOR";
 const ENV_RESIDENCY_REQUIREMENT: &str = "CODEXMANAGER_RESIDENCY_REQUIREMENT";
 pub(crate) const RESIDENCY_HEADER_NAME: &str = "x-openai-internal-codex-residency";
@@ -213,13 +216,37 @@ pub(crate) fn current_free_account_max_model() -> String {
     crate::lock_utils::read_recover(free_account_max_model_cell(), "free_account_max_model").clone()
 }
 
+pub(crate) fn current_free_account_preferred_models() -> Vec<String> {
+    ensure_runtime_config_loaded();
+    crate::lock_utils::read_recover(
+        free_account_preferred_models_cell(),
+        "free_account_preferred_models",
+    )
+    .clone()
+}
+
+pub(crate) fn should_prioritize_free_account_for_model(model: Option<&str>) -> bool {
+    let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let Ok(normalized_model) = normalize_model_slug(model) else {
+        return false;
+    };
+    if normalized_model == "auto" {
+        return false;
+    };
+    current_free_account_preferred_models()
+        .iter()
+        .any(|item| item.eq_ignore_ascii_case(normalized_model.as_str()))
+}
+
 pub(crate) fn current_originator() -> String {
     ensure_runtime_config_loaded();
     crate::lock_utils::read_recover(originator_cell(), "originator").clone()
 }
 
 pub(crate) fn current_wire_originator() -> String {
-    DEFAULT_ORIGINATOR.to_string()
+    current_originator()
 }
 
 pub(crate) fn set_originator(originator: &str) -> Result<String, String> {
@@ -289,6 +316,22 @@ pub(crate) fn set_free_account_max_model(model: &str) -> Result<String, String> 
     std::env::set_var(ENV_FREE_ACCOUNT_MAX_MODEL, normalized.as_str());
     let mut cached =
         crate::lock_utils::write_recover(free_account_max_model_cell(), "free_account_max_model");
+    *cached = normalized.clone();
+    Ok(normalized)
+}
+
+pub(crate) fn set_free_account_preferred_models(models: &[String]) -> Result<Vec<String>, String> {
+    ensure_runtime_config_loaded();
+    let normalized = normalize_free_account_preferred_models(models)?;
+    if normalized.is_empty() {
+        std::env::remove_var(ENV_FREE_ACCOUNT_PREFERRED_MODELS);
+    } else {
+        std::env::set_var(ENV_FREE_ACCOUNT_PREFERRED_MODELS, normalized.join(","));
+    }
+    let mut cached = crate::lock_utils::write_recover(
+        free_account_preferred_models_cell(),
+        "free_account_preferred_models",
+    );
     *cached = normalized.clone();
     Ok(normalized)
 }
@@ -440,6 +483,15 @@ pub(super) fn reload_from_env() {
     *cached_free_account_max_model = free_account_max_model;
     drop(cached_free_account_max_model);
 
+    let free_account_preferred_models =
+        parse_free_account_preferred_models_env(env_non_empty(ENV_FREE_ACCOUNT_PREFERRED_MODELS));
+    let mut cached_free_account_preferred_models = crate::lock_utils::write_recover(
+        free_account_preferred_models_cell(),
+        "free_account_preferred_models",
+    );
+    *cached_free_account_preferred_models = free_account_preferred_models;
+    drop(cached_free_account_preferred_models);
+
     let originator = env_non_empty(ENV_ORIGINATOR)
         .and_then(|value| normalize_originator(value.as_str()).ok())
         .unwrap_or_else(|| DEFAULT_ORIGINATOR.to_string());
@@ -532,6 +584,10 @@ fn free_account_max_model_cell() -> &'static RwLock<String> {
     FREE_ACCOUNT_MAX_MODEL.get_or_init(|| RwLock::new(DEFAULT_FREE_ACCOUNT_MAX_MODEL.to_string()))
 }
 
+fn free_account_preferred_models_cell() -> &'static RwLock<Vec<String>> {
+    FREE_ACCOUNT_PREFERRED_MODELS.get_or_init(|| RwLock::new(Vec::new()))
+}
+
 fn originator_cell() -> &'static RwLock<String> {
     ORIGINATOR.get_or_init(|| RwLock::new(DEFAULT_ORIGINATOR.to_string()))
 }
@@ -616,6 +672,47 @@ fn normalize_model_slug(raw: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+fn normalize_free_account_preferred_models(models: &[String]) -> Result<Vec<String>, String> {
+    let mut normalized = Vec::new();
+    for raw in models {
+        let slug = normalize_model_slug(raw.as_str())?;
+        if slug == "auto" {
+            return Err("freeAccountPreferredModels does not support 'auto'".to_string());
+        }
+        if !normalized.iter().any(|item| item == &slug) {
+            normalized.push(slug);
+        }
+    }
+    Ok(normalized)
+}
+
+fn parse_free_account_preferred_models_env(raw: Option<String>) -> Vec<String> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let mut normalized = Vec::new();
+    for part in raw.split(|ch| ch == ',' || ch == ';' || ch == '\n' || ch == '\r') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        match normalize_model_slug(part) {
+            Ok(slug) if slug != "auto" && !normalized.iter().any(|item| item == &slug) => {
+                normalized.push(slug);
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!(
+                    "event=gateway_invalid_free_account_preferred_model model={} err={}",
+                    part,
+                    err
+                );
+            }
+        }
+    }
+    normalized
+}
+
 fn normalize_originator(raw: &str) -> Result<String, String> {
     let normalized = raw.trim();
     if normalized.is_empty() {
@@ -623,6 +720,9 @@ fn normalize_originator(raw: &str) -> Result<String, String> {
     }
     if normalized.chars().any(|ch| ch.is_ascii_control()) {
         return Err("originator contains control characters".to_string());
+    }
+    if HeaderValue::from_str(normalized).is_err() {
+        return Err("originator contains unsupported characters".to_string());
     }
     Ok(normalized.to_string())
 }

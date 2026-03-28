@@ -501,9 +501,15 @@ export function normalizeAppSettings(payload: unknown): AppSettings {
     freeAccountMaxModelOptions: asArray(source.freeAccountMaxModelOptions).map((item) =>
       asString(item)
     ),
+    freeAccountPreferredModels: asArray(source.freeAccountPreferredModels).map((item) =>
+      asString(item)
+    ),
+    freeAccountPreferredModelOptions: asArray(
+      source.freeAccountPreferredModelOptions
+    ).map((item) => asString(item)),
     requestCompressionEnabled: asBoolean(source.requestCompressionEnabled, true),
     gatewayOriginator: asString(source.gatewayOriginator) || "codex_cli_rs",
-    gatewayUserAgentVersion: asString(source.gatewayUserAgentVersion) || "0.101.0",
+    gatewayUserAgentVersion: asString(source.gatewayUserAgentVersion) || "0.116.0",
     gatewayResidencyRequirement: asString(source.gatewayResidencyRequirement),
     gatewayResidencyRequirementOptions: asArray(
       source.gatewayResidencyRequirementOptions

@@ -1,8 +1,8 @@
 use codexmanager_core::auth::extract_token_exp;
 use codexmanager_core::storage::{now_ts, Storage, Token};
 
+use super::http::refresh_access_token;
 use crate::auth_tokens::obtain_api_key;
-use crate::usage_http::refresh_access_token;
 
 pub(crate) fn refresh_and_persist_access_token(
     storage: &Storage,

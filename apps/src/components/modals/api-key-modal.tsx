@@ -101,16 +101,7 @@ export function ApiKeyModal({ open, onOpenChange, apiKey }: ApiKeyModalProps) {
 
     if (apiKey.protocol === "azure_openai") {
       setAzureEndpoint(apiKey.upstreamBaseUrl || "");
-      try {
-        const headers = apiKey.staticHeadersJson
-          ? JSON.parse(apiKey.staticHeadersJson)
-          : {};
-        setAzureApiKey(
-          typeof headers["api-key"] === "string" ? headers["api-key"] : "",
-        );
-      } catch {
-        setAzureApiKey("");
-      }
+      setAzureApiKey("");
       setUpstreamBaseUrl("");
     } else {
       setUpstreamBaseUrl(apiKey.upstreamBaseUrl || "");
@@ -334,11 +325,18 @@ export function ApiKeyModal({ open, onOpenChange, apiKey }: ApiKeyModalProps) {
                 <Label className="text-xs">Azure 接口密钥</Label>
                 <Input
                   type="password"
-                  placeholder="your-azure-key"
+                  placeholder={
+                    apiKey?.id ? "留空则保留现有 Azure Key" : "your-azure-key"
+                  }
                   value={azureApiKey}
                   onChange={(e) => setAzureApiKey(e.target.value)}
                   className="h-9 font-mono text-xs"
                 />
+                {apiKey?.id ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    出于安全原因，已保存的 Azure Key 不会回填；留空保存会保留原值。
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : null}

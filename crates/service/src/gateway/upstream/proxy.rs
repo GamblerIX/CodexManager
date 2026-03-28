@@ -1,9 +1,9 @@
 use crate::apikey_profile::{PROTOCOL_ANTHROPIC_NATIVE, PROTOCOL_AZURE_OPENAI};
-use crate::gateway::request_log::RequestLogUsage;
 use std::time::Instant;
 use tiny_http::Request;
 
 use super::super::local_validation::LocalValidationResult;
+use super::super::request_log::RequestLogUsage;
 use super::proxy_pipeline::candidate_executor::{
     execute_candidate_sequence, CandidateExecutionResult, CandidateExecutorParams,
 };
@@ -147,6 +147,7 @@ pub(in super::super) fn proxy_validated_request(
         has_prompt_cache_key,
         &incoming_headers,
         &body,
+        &storage,
         &mut candidates,
         key_id.as_str(),
         platform_key_hash.as_str(),

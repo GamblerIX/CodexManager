@@ -9,7 +9,6 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DisclaimerTicker } from "@/components/layout/disclaimer-ticker";
 import { WebPasswordModal } from "../modals/web-password-modal";
 import { serviceClient } from "@/lib/api/service-client";
 import { appClient } from "@/lib/api/app-client";
@@ -116,9 +115,7 @@ export function Header() {
           ) : null}
         </div>
 
-        <div className="hidden min-w-0 flex-1 justify-center lg:flex">
-          <DisclaimerTicker />
-        </div>
+        <div className="hidden min-w-0 flex-1 lg:block" />
 
         <div className="flex shrink-0 items-center gap-4">
           {isDesktop ? (

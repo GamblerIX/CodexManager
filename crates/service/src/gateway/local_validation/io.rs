@@ -5,7 +5,7 @@ pub(super) fn read_request_body(
 ) -> Result<Vec<u8>, super::LocalValidationError> {
     // 中文注释：先把请求体读完再进入鉴权判断，避免客户端写流还在进行时被提前断开。
     let mut body = Vec::new();
-    let max_body_bytes = crate::gateway::front_proxy_max_body_bytes();
+    let max_body_bytes = super::super::front_proxy_max_body_bytes();
     let reader = request.as_reader();
     let mut chunk = [0_u8; 8192];
 

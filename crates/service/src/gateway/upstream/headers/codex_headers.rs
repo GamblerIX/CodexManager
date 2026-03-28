@@ -1,4 +1,4 @@
-pub(crate) const CODEX_CLIENT_VERSION: &str = "0.101.0";
+pub(crate) const CODEX_CLIENT_VERSION: &str = "0.116.0";
 
 pub(crate) struct CodexUpstreamHeaderInput<'a> {
     pub(crate) auth_token: &'a str,
@@ -50,15 +50,16 @@ pub(crate) fn build_codex_upstream_headers(
     ));
     headers.push((
         "User-Agent".to_string(),
-        crate::gateway::current_codex_user_agent(),
+        super::super::super::super::current_codex_user_agent(),
     ));
     headers.push((
         "originator".to_string(),
-        crate::gateway::current_wire_originator(),
+        super::super::super::super::current_wire_originator(),
     ));
-    if let Some(residency_requirement) = crate::gateway::current_residency_requirement() {
+    if let Some(residency_requirement) = super::super::super::super::current_residency_requirement()
+    {
         headers.push((
-            crate::gateway::runtime_config::RESIDENCY_HEADER_NAME.to_string(),
+            super::super::super::super::runtime_config::RESIDENCY_HEADER_NAME.to_string(),
             residency_requirement,
         ));
     }
@@ -130,15 +131,16 @@ pub(crate) fn build_codex_compact_upstream_headers(
     headers.push(("Accept".to_string(), "application/json".to_string()));
     headers.push((
         "User-Agent".to_string(),
-        crate::gateway::current_codex_user_agent(),
+        super::super::super::super::current_codex_user_agent(),
     ));
     headers.push((
         "originator".to_string(),
-        crate::gateway::current_wire_originator(),
+        super::super::super::super::current_wire_originator(),
     ));
-    if let Some(residency_requirement) = crate::gateway::current_residency_requirement() {
+    if let Some(residency_requirement) = super::super::super::super::current_residency_requirement()
+    {
         headers.push((
-            crate::gateway::runtime_config::RESIDENCY_HEADER_NAME.to_string(),
+            super::super::super::super::runtime_config::RESIDENCY_HEADER_NAME.to_string(),
             residency_requirement,
         ));
     }

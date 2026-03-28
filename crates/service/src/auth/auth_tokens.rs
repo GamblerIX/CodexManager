@@ -11,11 +11,11 @@ use serde::de::DeserializeOwned;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use super::callback::resolve_redirect_uri;
 use crate::account_identity::{
     build_account_storage_id, build_fallback_subject_key, clean_value,
     pick_existing_account_id_by_identity,
 };
-use crate::auth_callback::resolve_redirect_uri;
 use crate::storage_helpers::open_storage;
 
 static OPENAI_AUTH_HTTP_CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
@@ -632,8 +632,8 @@ pub(crate) fn complete_login_with_redirect(
     storage
         .update_login_session_status(state, "success", None)
         .map_err(|e| e.to_string())?;
-    crate::auth_account::set_current_auth_account_id(Some(&account_key))?;
-    crate::auth_account::set_current_auth_mode(Some("chatgpt"))?;
+    super::account::set_current_auth_account_id(Some(&account_key))?;
+    super::account::set_current_auth_mode(Some("chatgpt"))?;
     Ok(())
 }
 

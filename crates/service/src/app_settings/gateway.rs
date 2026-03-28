@@ -5,7 +5,8 @@ use serde::Deserialize;
 use super::{
     normalize_optional_text, save_persisted_app_setting, save_persisted_bool_setting,
     APP_SETTING_GATEWAY_BACKGROUND_TASKS_KEY, APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY,
-    APP_SETTING_GATEWAY_ORIGINATOR_KEY, APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
+    APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY, APP_SETTING_GATEWAY_ORIGINATOR_KEY,
+    APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
     APP_SETTING_GATEWAY_RESIDENCY_REQUIREMENT_KEY, APP_SETTING_GATEWAY_ROUTE_STRATEGY_KEY,
     APP_SETTING_GATEWAY_SSE_KEEPALIVE_INTERVAL_MS_KEY, APP_SETTING_GATEWAY_UPSTREAM_PROXY_URL_KEY,
     APP_SETTING_GATEWAY_UPSTREAM_STREAM_TIMEOUT_MS_KEY, APP_SETTING_GATEWAY_USER_AGENT_VERSION_KEY,
@@ -62,6 +63,25 @@ pub fn set_gateway_free_account_max_model(model: &str) -> Result<String, String>
 
 pub fn current_gateway_free_account_max_model() -> String {
     gateway::current_free_account_max_model()
+}
+
+pub fn set_gateway_free_account_preferred_models(models: &[String]) -> Result<Vec<String>, String> {
+    let applied = gateway::set_free_account_preferred_models(models)?;
+    let serialized = serde_json::to_string(&applied)
+        .map_err(|err| format!("serialize free account preferred models failed: {err}"))?;
+    save_persisted_app_setting(
+        APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY,
+        if applied.is_empty() {
+            None
+        } else {
+            Some(&serialized)
+        },
+    )?;
+    Ok(applied)
+}
+
+pub fn current_gateway_free_account_preferred_models() -> Vec<String> {
+    gateway::current_free_account_preferred_models()
 }
 
 pub fn set_gateway_request_compression_enabled(enabled: bool) -> Result<bool, String> {

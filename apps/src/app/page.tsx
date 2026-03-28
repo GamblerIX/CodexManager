@@ -337,7 +337,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <p className="text-xs text-muted-foreground">
-              基于当前配额，系统会优先推荐剩余额度更高且仍可参与路由的账号。
+              基于当前配额，系统会优先推荐剩余额度较低但仍可参与路由的账号。
             </p>
             {isLoading ? (
               <div className="space-y-4">

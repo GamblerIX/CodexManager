@@ -248,7 +248,7 @@ fn codex_header_profile_uses_dynamic_originator_and_residency_requirement() {
 
     assert_eq!(
         find_header(&headers, "Originator").as_deref(),
-        Some("codex_cli_rs")
+        Some("codex_cli_rs_e2e")
     );
     assert_eq!(
         find_header(&headers, "x-openai-internal-codex-residency").as_deref(),
@@ -256,7 +256,7 @@ fn codex_header_profile_uses_dynamic_originator_and_residency_requirement() {
     );
     assert!(find_header(&headers, "User-Agent")
         .as_deref()
-        .is_some_and(|value| value.contains("codex_cli_rs/0.101.0")));
+        .is_some_and(|value| value.contains("codex_cli_rs_e2e/0.116.0")));
 }
 
 #[test]

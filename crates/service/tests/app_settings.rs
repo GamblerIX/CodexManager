@@ -15,6 +15,7 @@ const ISOLATED_RUNTIME_ENV_KEYS: &[&str] = &[
     "CODEXMANAGER_WEB_ADDR",
     "CODEXMANAGER_ROUTE_STRATEGY",
     "CODEXMANAGER_FREE_ACCOUNT_MAX_MODEL",
+    "CODEXMANAGER_FREE_ACCOUNT_PREFERRED_MODELS",
     "CODEXMANAGER_ENABLE_REQUEST_COMPRESSION",
     "CODEXMANAGER_ORIGINATOR",
     "CODEXMANAGER_RESIDENCY_REQUIREMENT",
@@ -50,9 +51,10 @@ fn reset_runtime_defaults() {
     let _ = codexmanager_service::app_settings_set(Some(&json!({
         "routeStrategy": "balanced",
         "freeAccountMaxModel": "gpt-5.2",
+        "freeAccountPreferredModels": [],
         "requestCompressionEnabled": true,
         "gatewayOriginator": "codex_cli_rs",
-        "gatewayUserAgentVersion": "0.101.0",
+        "gatewayUserAgentVersion": "0.116.0",
         "gatewayResidencyRequirement": "",
         "appearancePreset": "classic",
         "lightweightModeOnCloseToTray": false,
@@ -210,6 +212,7 @@ fn app_settings_set_persists_snapshot_and_password_hash() {
             "serviceListenMode": "all_interfaces",
             "routeStrategy": "rr",
             "freeAccountMaxModel": "gpt-5.3-codex",
+            "freeAccountPreferredModels": ["gpt-5.4-mini", "gpt-5.2"],
             "requestCompressionEnabled": false,
             "gatewayOriginator": "codex_cli_rs_test",
             "gatewayUserAgentVersion": "0.101.2",
@@ -294,6 +297,18 @@ fn app_settings_set_persists_snapshot_and_password_hash() {
         );
         assert_eq!(
             snapshot
+                .get("freeAccountPreferredModels")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(ToString::to_string))
+                        .collect::<Vec<_>>()
+                }),
+            Some(vec!["gpt-5.4-mini".to_string(), "gpt-5.2".to_string()])
+        );
+        assert_eq!(
+            snapshot
                 .get("requestCompressionEnabled")
                 .and_then(|value| value.as_bool()),
             Some(false)
@@ -348,6 +363,14 @@ fn app_settings_set_persists_snapshot_and_password_hash() {
                 )
                 .expect("read free account max model"),
             Some("gpt-5.3-codex".to_string())
+        );
+        assert_eq!(
+            storage
+                .get_app_setting(
+                    codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY
+                )
+                .expect("read free account preferred models"),
+            Some("[\"gpt-5.4-mini\",\"gpt-5.2\"]".to_string())
         );
         assert_eq!(
             storage
@@ -423,6 +446,39 @@ fn app_settings_get_disables_update_auto_check_by_default() {
 }
 
 #[test]
+fn app_settings_set_persists_empty_free_account_preferred_models_as_json_array() {
+    with_temp_db(|db_path| {
+        codexmanager_service::app_settings_set(Some(&json!({
+            "freeAccountPreferredModels": ["gpt-5.4-mini"]
+        })))
+        .expect("seed preferred models");
+
+        let snapshot = codexmanager_service::app_settings_set(Some(&json!({
+            "freeAccountPreferredModels": []
+        })))
+        .expect("clear preferred models");
+
+        assert_eq!(
+            snapshot
+                .get("freeAccountPreferredModels")
+                .and_then(|value| value.as_array())
+                .map(|items| items.len()),
+            Some(0)
+        );
+
+        let storage = Storage::open(db_path).expect("open storage");
+        assert_eq!(
+            storage
+                .get_app_setting(
+                    codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY
+                )
+                .expect("read free account preferred models"),
+            Some("[]".to_string())
+        );
+    });
+}
+
+#[test]
 fn app_settings_set_preserves_dark_one_theme() {
     with_temp_db(|_| {
         let snapshot = codexmanager_service::app_settings_set(Some(&json!({
@@ -451,6 +507,53 @@ fn app_settings_set_preserves_dark_one_theme() {
 }
 
 #[test]
+fn sync_runtime_settings_from_storage_treats_empty_preferred_models_as_empty_list() {
+    with_temp_db(|db_path| {
+        codexmanager_service::set_gateway_free_account_preferred_models(&[
+            "gpt-5.4-mini".to_string(),
+        ])
+        .expect("seed preferred models");
+        let _env = override_env_vars(&[("CODEXMANAGER_FREE_ACCOUNT_PREFERRED_MODELS", None)]);
+
+        let storage = Storage::open(db_path).expect("open storage");
+        storage
+            .set_app_setting(
+                codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY,
+                "",
+                now_ts(),
+            )
+            .expect("save legacy empty preferred models");
+        drop(storage);
+
+        codexmanager_service::sync_runtime_settings_from_storage();
+
+        assert!(
+            codexmanager_service::current_gateway_free_account_preferred_models().is_empty()
+        );
+
+        let snapshot =
+            codexmanager_service::app_settings_get().expect("get app settings after sync");
+        assert_eq!(
+            snapshot
+                .get("freeAccountPreferredModels")
+                .and_then(|value| value.as_array())
+                .map(|items| items.len()),
+            Some(0)
+        );
+
+        let storage = Storage::open(db_path).expect("open storage");
+        assert_eq!(
+            storage
+                .get_app_setting(
+                    codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY
+                )
+                .expect("read free account preferred models"),
+            Some("[]".to_string())
+        );
+    });
+}
+
+#[test]
 fn sync_runtime_settings_from_storage_applies_saved_runtime_values() {
     with_temp_db(|db_path| {
         let storage = Storage::open(db_path).expect("open storage");
@@ -468,6 +571,13 @@ fn sync_runtime_settings_from_storage_applies_saved_runtime_values() {
                 now_ts(),
             )
             .expect("save free account max model");
+        storage
+            .set_app_setting(
+                codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY,
+                "[\"gpt-5.4-mini\"]",
+                now_ts(),
+            )
+            .expect("save free account preferred models");
         storage
             .set_app_setting(
                 codexmanager_service::APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
@@ -568,6 +678,18 @@ fn sync_runtime_settings_from_storage_applies_saved_runtime_values() {
         );
         assert_eq!(
             snapshot
+                .get("freeAccountPreferredModels")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .collect::<Vec<_>>()
+                }),
+            Some(vec!["gpt-5.4-mini"])
+        );
+        assert_eq!(
+            snapshot
                 .get("requestCompressionEnabled")
                 .and_then(|value| value.as_bool()),
             Some(false)
@@ -639,6 +761,58 @@ fn sync_runtime_settings_from_storage_applies_saved_runtime_values() {
 }
 
 #[test]
+fn sync_runtime_settings_from_storage_preserves_legacy_gateway_originator() {
+    with_temp_db(|db_path| {
+        let _env = override_env_vars(&[("CODEXMANAGER_ORIGINATOR", None)]);
+        let legacy_originator = "codex cli (desktop)";
+        let storage = Storage::open(db_path).expect("open storage");
+        storage
+            .set_app_setting(
+                codexmanager_service::APP_SETTING_GATEWAY_ORIGINATOR_KEY,
+                legacy_originator,
+                now_ts(),
+            )
+            .expect("save legacy gateway originator");
+        assert_eq!(
+            storage
+                .get_app_setting(codexmanager_service::APP_SETTING_GATEWAY_ORIGINATOR_KEY)
+                .expect("read legacy gateway originator before sync"),
+            Some(legacy_originator.to_string())
+        );
+        drop(storage);
+        assert_eq!(std::env::var("CODEXMANAGER_ORIGINATOR").ok(), None);
+
+        codexmanager_service::sync_runtime_settings_from_storage();
+
+        assert_eq!(
+            std::env::var("CODEXMANAGER_ORIGINATOR").ok().as_deref(),
+            Some(legacy_originator)
+        );
+        assert_eq!(
+            codexmanager_service::current_gateway_originator(),
+            legacy_originator.to_string()
+        );
+
+        let snapshot =
+            codexmanager_service::app_settings_get().expect("get app settings after sync");
+        assert_eq!(
+            snapshot
+                .get("gatewayOriginator")
+                .and_then(|value| value.as_str()),
+            Some(legacy_originator)
+        );
+
+        let storage = Storage::open(db_path).expect("open storage");
+        assert_eq!(
+            storage
+                .get_app_setting(codexmanager_service::APP_SETTING_GATEWAY_ORIGINATOR_KEY)
+                .expect("read gateway originator"),
+            Some(legacy_originator.to_string())
+        );
+    });
+}
+
+#[test]
 fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
     with_temp_db(|db_path| {
         let storage = Storage::open(db_path).expect("open storage");
@@ -647,6 +821,7 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             codexmanager_service::SERVICE_BIND_MODE_SETTING_KEY,
             codexmanager_service::APP_SETTING_GATEWAY_ROUTE_STRATEGY_KEY,
             codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY,
+            codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY,
             codexmanager_service::APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
             codexmanager_service::APP_SETTING_GATEWAY_ORIGINATOR_KEY,
             codexmanager_service::APP_SETTING_GATEWAY_USER_AGENT_VERSION_KEY,
@@ -664,6 +839,10 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             ("CODEXMANAGER_SERVICE_ADDR", Some("0.0.0.0:4999")),
             ("CODEXMANAGER_ROUTE_STRATEGY", Some("balanced")),
             ("CODEXMANAGER_FREE_ACCOUNT_MAX_MODEL", Some("gpt-5.2-codex")),
+            (
+                "CODEXMANAGER_FREE_ACCOUNT_PREFERRED_MODELS",
+                Some("gpt-5.4-mini,gpt-5.2"),
+            ),
             ("CODEXMANAGER_ENABLE_REQUEST_COMPRESSION", Some("0")),
             ("CODEXMANAGER_ORIGINATOR", Some("codex_cli_rs_env")),
             ("CODEXMANAGER_RESIDENCY_REQUIREMENT", Some("us")),
@@ -712,6 +891,18 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
         );
         assert_eq!(
             snapshot
+                .get("freeAccountPreferredModels")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .collect::<Vec<_>>()
+                }),
+            Some(vec!["gpt-5.4-mini", "gpt-5.2"])
+        );
+        assert_eq!(
+            snapshot
                 .get("requestCompressionEnabled")
                 .and_then(|value| value.as_bool()),
             Some(false)
@@ -726,7 +917,7 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             snapshot
                 .get("gatewayUserAgentVersion")
                 .and_then(|value| value.as_str()),
-            Some("0.101.0")
+            Some("0.116.0")
         );
         assert_eq!(
             snapshot
@@ -811,6 +1002,14 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
         assert_eq!(
             storage
                 .get_app_setting(
+                    codexmanager_service::APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY
+                )
+                .expect("read free account preferred models"),
+            Some("[\"gpt-5.4-mini\",\"gpt-5.2\"]".to_string())
+        );
+        assert_eq!(
+            storage
+                .get_app_setting(
                     codexmanager_service::APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY
                 )
                 .expect("read request compression enabled"),
@@ -826,7 +1025,7 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             storage
                 .get_app_setting(codexmanager_service::APP_SETTING_GATEWAY_USER_AGENT_VERSION_KEY)
                 .expect("read gateway user agent version"),
-            Some("0.101.0".to_string())
+            Some("0.116.0".to_string())
         );
         assert_eq!(
             storage
@@ -851,6 +1050,32 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
                 )
                 .expect("read sse keepalive interval"),
             Some("14000".to_string())
+        );
+    });
+}
+
+#[test]
+fn sync_runtime_settings_preserves_usage_refresh_worker_env_override() {
+    with_temp_db(|_| {
+        let _env = override_env_vars(&[("CODEXMANAGER_USAGE_REFRESH_WORKERS", Some("6"))]);
+
+        codexmanager_service::sync_runtime_settings_from_storage();
+
+        let snapshot =
+            codexmanager_service::app_settings_get().expect("get app settings after sync");
+
+        assert_eq!(
+            snapshot
+                .get("backgroundTasks")
+                .and_then(|value| value.get("usageRefreshWorkers"))
+                .and_then(|value| value.as_u64()),
+            Some(6)
+        );
+        assert_eq!(
+            std::env::var("CODEXMANAGER_USAGE_REFRESH_WORKERS")
+                .ok()
+                .as_deref(),
+            Some("6")
         );
     });
 }
@@ -1147,5 +1372,15 @@ fn app_settings_set_rejects_reserved_and_bootstrap_env_override_keys() {
             }
         })));
         assert!(bootstrap.is_err());
+    });
+}
+
+#[test]
+fn app_settings_set_rejects_service_addr_without_port() {
+    with_temp_db(|_| {
+        let result = codexmanager_service::app_settings_set(Some(&json!({
+            "serviceAddr": "localhost:"
+        })));
+        assert!(result.is_err(), "result={result:?}");
     });
 }

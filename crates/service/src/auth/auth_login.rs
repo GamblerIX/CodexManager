@@ -5,7 +5,7 @@ use codexmanager_core::auth::{
 use codexmanager_core::rpc::types::{DeviceAuthInfo, LoginStartResult};
 use codexmanager_core::storage::{now_ts, Event, LoginSession};
 
-use crate::auth_callback::{ensure_login_server, resolve_redirect_uri};
+use super::callback::{ensure_login_server, resolve_redirect_uri};
 use crate::storage_helpers::open_storage;
 
 pub(crate) fn login_start(

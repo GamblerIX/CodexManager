@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use tiny_http::Request;
 
-use crate::gateway::IncomingHeaderSnapshot;
+use super::super::super::super::IncomingHeaderSnapshot;
 
 #[allow(dead_code)]
 pub(crate) fn find_incoming_header<'a>(request: &'a Request, name: &str) -> Option<&'a str> {

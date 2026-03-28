@@ -992,7 +992,8 @@ fn gateway_openai_compact_html_non_success_is_mapped_to_structured_403() {
     let upstream_body =
         "<!doctype html><html><title>Just a moment...</title><body>challenge</body></html>";
     let (upstream_addr, upstream_rx, upstream_join) =
-        start_mock_upstream_once_with_status_content_type_and_headers(
+        start_mock_upstream_repeat_with_status_content_type_and_headers(
+            2,
             403,
             upstream_body,
             "text/html; charset=utf-8",
@@ -1065,20 +1066,16 @@ fn gateway_openai_compact_html_non_success_is_mapped_to_structured_403() {
         "stream": false
     });
     let request_body = serde_json::to_string(&request_body).expect("serialize request");
-    let gateway_url = format!("http://{}/v1/responses/compact", server.addr);
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .expect("build client")
-        .post(&gateway_url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {platform_key}"))
-        .header("session_id", "sess_compact_html_non_success")
-        .body(request_body)
-        .send()
-        .expect("send compact request");
-    let status = response.status().as_u16();
-    let gateway_body = response.text().expect("read gateway body");
+    let (status, gateway_body) = post_http_raw(
+        &server.addr,
+        "/v1/responses/compact",
+        &request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &format!("Bearer {platform_key}")),
+            ("session_id", "sess_compact_html_non_success"),
+        ],
+    );
     server.join();
     assert_eq!(status, 403, "gateway response: {gateway_body}");
     assert!(
@@ -1157,7 +1154,8 @@ fn gateway_openai_html_non_success_logs_debug_ids_for_responses() {
     let upstream_body =
         "<!doctype html><html><title>Just a moment...</title><body>challenge</body></html>";
     let (upstream_addr, upstream_rx, upstream_join) =
-        start_mock_upstream_once_with_status_content_type_and_headers(
+        start_mock_upstream_repeat_with_status_content_type_and_headers(
+            2,
             403,
             upstream_body,
             "text/html; charset=utf-8",
@@ -1226,19 +1224,15 @@ fn gateway_openai_html_non_success_logs_debug_ids_for_responses() {
         "stream": false
     });
     let request_body = serde_json::to_string(&request_body).expect("serialize request");
-    let gateway_url = format!("http://{}/v1/responses", server.addr);
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .expect("build client")
-        .post(&gateway_url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {platform_key}"))
-        .body(request_body)
-        .send()
-        .expect("send responses request");
-    let status = response.status().as_u16();
-    let gateway_body = response.text().expect("read gateway body");
+    let (status, gateway_body) = post_http_raw(
+        &server.addr,
+        "/v1/responses",
+        &request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &format!("Bearer {platform_key}")),
+        ],
+    );
     server.join();
     assert_eq!(status, 403, "gateway response: {gateway_body}");
 
@@ -1433,7 +1427,7 @@ fn apikey_models_refresh_includes_client_version_query() {
     upstream_join.join().expect("join upstream");
     assert_eq!(
         captured.path,
-        "/backend-api/codex/models?client_version=0.101.0"
+        "/backend-api/codex/models?client_version=0.116.0"
     );
 }
 

@@ -7,12 +7,25 @@ import { toast } from "sonner";
 import { appClient } from "@/lib/api/app-client";
 import { getAppErrorMessage, isTauriRuntime } from "@/lib/api/transport";
 import { useAppStore } from "@/lib/store/useAppStore";
+import { createSerializedTaskQueue } from "@/lib/utils/serialized-task-queue";
+import {
+  completePreferredModelSave,
+  createPreferredModelSaveState,
+  failPreferredModelSave,
+  startPreferredModelSave,
+  syncPreferredModelSaveConfirmedModels,
+} from "./preferred-model-save-state";
+import {
+  createBackgroundTasksPatch,
+  createEnvOverridePatch,
+  createEnvOverrideResetPatch,
+} from "./settings-patches";
 import {
   APPEARANCE_PRESETS,
   applyAppearancePreset,
   normalizeAppearancePreset,
 } from "@/lib/appearance";
-import { AppSettings, BackgroundTaskSettings } from "@/types";
+import { AppSettings, AppSettingsPatch, BackgroundTaskSettings } from "@/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -111,7 +124,19 @@ const DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS = [
   "gpt-5.2",
   "gpt-5.2-codex",
   "gpt-5.3-codex",
+  "gpt-5.4-mini",
   "gpt-5.4",
+] as const;
+const DEFAULT_FREE_ACCOUNT_PREFERRED_MODEL_OPTIONS = DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS.filter(
+  (model) => model !== "auto"
+);
+const DEFAULT_GATEWAY_USER_AGENT_VERSION = "0.116.0";
+const UPSTREAM_PROXY_QUICK_OPTIONS = [
+  {
+    value: "socks5://127.0.0.1:10808",
+    label: "socks5://127.0.0.1:10808",
+    hint: "常用本地代理",
+  },
 ] as const;
 
 function formatFreeAccountModelLabel(value: string | null | undefined): string {
@@ -120,6 +145,27 @@ function formatFreeAccountModelLabel(value: string | null | undefined): string {
     return "跟随请求";
   }
   return normalized;
+}
+
+function arraysEqual(left: readonly string[] | null | undefined, right: readonly string[] | null | undefined): boolean {
+  const normalizedLeft = left ?? [];
+  const normalizedRight = right ?? [];
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+  return normalizedLeft.every((item, index) => item === normalizedRight[index]);
+}
+
+function normalizePreferredModels(
+  nextModels: readonly string[],
+  knownOptions: readonly string[]
+): string[] {
+  const uniqueModels = nextModels.filter(
+    (model, index) => Boolean(model) && nextModels.indexOf(model) === index
+  );
+  const ordered = knownOptions.filter((model) => uniqueModels.includes(model));
+  const extras = uniqueModels.filter((model) => !ordered.includes(model));
+  return [...ordered, ...extras];
 }
 
 const SETTINGS_TABS = ["general", "appearance", "gateway", "tasks", "env"] as const;
@@ -281,6 +327,7 @@ export default function SettingsPage() {
   const [selectedEnvKey, setSelectedEnvKey] = useState<string | null>(null);
   const [envDrafts, setEnvDrafts] = useState<Record<string, string>>({});
   const [upstreamProxyDraft, setUpstreamProxyDraft] = useState<string | null>(null);
+  const [upstreamProxyQuickFillOpen, setUpstreamProxyQuickFillOpen] = useState(false);
   const [gatewayOriginatorDraft, setGatewayOriginatorDraft] = useState<string | null>(null);
   const [gatewayUserAgentVersionDraft, setGatewayUserAgentVersionDraft] = useState<string | null>(null);
   const [lastUpdateCheck, setLastUpdateCheck] = useState<UpdateCheckSummary | null>(null);
@@ -292,27 +339,41 @@ export default function SettingsPage() {
     Partial<Record<"sseKeepaliveIntervalMs" | "upstreamStreamTimeoutMs", string>>
   >({});
   const [backgroundTaskDraft, setBackgroundTaskDraft] = useState<Record<string, string>>({});
+  const [pendingFreeAccountPreferredModels, setPendingFreeAccountPreferredModels] = useState<
+    string[] | null
+  >(null);
 
   const { data: snapshot, isLoading } = useQuery({
     queryKey: ["app-settings-snapshot"],
     queryFn: () => appClient.getSettings(),
   });
 
+  const syncSettingsSnapshot = (nextSnapshot: AppSettings) => {
+    queryClient.setQueryData(["app-settings-snapshot"], nextSnapshot);
+    setStoreSettings(nextSnapshot);
+    if (nextSnapshot.lowTransparency) {
+      document.body.classList.add("low-transparency");
+    } else {
+      document.body.classList.remove("low-transparency");
+    }
+    applyAppearancePreset(nextSnapshot.appearancePreset);
+  };
+  const getCurrentSettingsSnapshot = (): AppSettings | null => {
+    const current = queryClient.getQueryData(["app-settings-snapshot"]);
+    return (current as AppSettings | undefined) ?? snapshot ?? null;
+  };
+
   const updateSettings = useMutation({
-    mutationFn: (patch: Partial<AppSettings> & { _silent?: boolean }) => {
+    mutationFn: (patch: AppSettingsPatch & { _silent?: boolean; _skipAutoSync?: boolean }) => {
       const actualPatch = { ...patch };
       delete actualPatch._silent;
+      delete actualPatch._skipAutoSync;
       return appClient.setSettings(actualPatch);
     },
     onSuccess: (nextSnapshot, variables) => {
-      queryClient.setQueryData(["app-settings-snapshot"], nextSnapshot);
-      setStoreSettings(nextSnapshot);
-      if (nextSnapshot.lowTransparency) {
-        document.body.classList.add("low-transparency");
-      } else {
-        document.body.classList.remove("low-transparency");
+      if (!variables._skipAutoSync) {
+        syncSettingsSnapshot(nextSnapshot);
       }
-      applyAppearancePreset(nextSnapshot.appearancePreset);
       if (!variables._silent) {
         toast.success("设置已更新");
       }
@@ -542,12 +603,22 @@ export default function SettingsPage() {
     () => snapshot?.envOverrideCatalog.find((item) => item.key === selectedEnvKey),
     [selectedEnvKey, snapshot?.envOverrideCatalog]
   );
+  const freeAccountPreferredModelOptions = useMemo(() => {
+    const options =
+      snapshot?.freeAccountPreferredModelOptions?.length
+        ? snapshot.freeAccountPreferredModelOptions
+        : DEFAULT_FREE_ACCOUNT_PREFERRED_MODEL_OPTIONS;
+    return options.filter(
+      (model, index) => model && options.indexOf(model) === index
+    );
+  }, [snapshot?.freeAccountPreferredModelOptions]);
 
   const upstreamProxyInput = upstreamProxyDraft ?? (snapshot?.upstreamProxyUrl || "");
   const gatewayOriginatorInput =
     gatewayOriginatorDraft ?? (snapshot?.gatewayOriginator || "codex_cli_rs");
   const gatewayUserAgentVersionInput =
-    gatewayUserAgentVersionDraft ?? (snapshot?.gatewayUserAgentVersion || "0.101.0");
+    gatewayUserAgentVersionDraft ??
+    (snapshot?.gatewayUserAgentVersion || DEFAULT_GATEWAY_USER_AGENT_VERSION);
   const transportInputValues = {
     sseKeepaliveIntervalMs:
       transportDraft.sseKeepaliveIntervalMs ??
@@ -565,11 +636,26 @@ export default function SettingsPage() {
 
   const lastIntentThemeRef = useRef<string | null>(null);
   const lastIntentAppearancePresetRef = useRef<string | null>(null);
+  const freeAccountPreferredSaveQueueRef = useRef(createSerializedTaskQueue());
+  const freeAccountPreferredSaveStateRef = useRef(createPreferredModelSaveState());
+  const effectiveFreeAccountPreferredModels =
+    pendingFreeAccountPreferredModels ?? (snapshot?.freeAccountPreferredModels || []);
+
+  useEffect(() => {
+    if (!snapshot || pendingFreeAccountPreferredModels != null) {
+      return;
+    }
+    freeAccountPreferredSaveStateRef.current = syncPreferredModelSaveConfirmedModels(
+      freeAccountPreferredSaveStateRef.current,
+      snapshot.freeAccountPreferredModels || []
+    );
+  }, [pendingFreeAccountPreferredModels, snapshot]);
 
   const handleThemeChange = (nextTheme: string) => {
-    if (!snapshot || nextTheme === snapshot.theme) return;
-    const previousSnapshot = snapshot;
-    const previousTheme = snapshot.theme || "tech";
+    const currentSnapshot = getCurrentSettingsSnapshot();
+    if (!currentSnapshot || nextTheme === currentSnapshot.theme) return;
+    const previousSnapshot = currentSnapshot;
+    const previousTheme = currentSnapshot.theme || "tech";
 
     // 1. Immediately update local UI and intent lock
     lastIntentThemeRef.current = nextTheme;
@@ -583,28 +669,25 @@ export default function SettingsPage() {
     setTheme(nextTheme);
 
     // 2. Optimistic local update
-    queryClient.setQueryData(["app-settings-snapshot"], {
-      ...snapshot,
+    syncSettingsSnapshot({
+      ...currentSnapshot,
       theme: nextTheme,
     });
-    setStoreSettings({ ...snapshot, theme: nextTheme });
 
     // 3. Immediate persist to backend (No debounce)
     updateSettings.mutate(
-      { theme: nextTheme, _silent: true },
+      { theme: nextTheme, _silent: true, _skipAutoSync: true },
       {
         onSuccess: (updatedSnapshot) => {
           // Double check if this is still our intent
           if (lastIntentThemeRef.current === nextTheme) {
-            queryClient.setQueryData(["app-settings-snapshot"], updatedSnapshot);
-            setStoreSettings(updatedSnapshot);
+            syncSettingsSnapshot(updatedSnapshot);
           }
         },
         onError: () => {
           // Only revert if no newer intent has been made
           if (lastIntentThemeRef.current === nextTheme) {
-            queryClient.setQueryData(["app-settings-snapshot"], previousSnapshot);
-            setStoreSettings(previousSnapshot);
+            syncSettingsSnapshot(previousSnapshot);
             setTheme(previousTheme);
           }
         },
@@ -613,37 +696,34 @@ export default function SettingsPage() {
   };
 
   const handleAppearancePresetChange = (nextPreset: string) => {
-    if (!snapshot) return;
+    const currentSnapshot = getCurrentSettingsSnapshot();
+    if (!currentSnapshot) return;
 
     const normalizedPreset = normalizeAppearancePreset(nextPreset);
-    const previousSnapshot = snapshot;
-    const previousPreset = normalizeAppearancePreset(snapshot.appearancePreset);
+    const previousSnapshot = currentSnapshot;
+    const previousPreset = normalizeAppearancePreset(currentSnapshot.appearancePreset);
     if (normalizedPreset === previousPreset) return;
 
     lastIntentAppearancePresetRef.current = normalizedPreset;
     lastSyncedAppearancePresetRef.current = normalizedPreset;
     applyAppearancePreset(normalizedPreset);
 
-    queryClient.setQueryData(["app-settings-snapshot"], {
-      ...snapshot,
+    syncSettingsSnapshot({
+      ...currentSnapshot,
       appearancePreset: normalizedPreset,
     });
-    setStoreSettings({ ...snapshot, appearancePreset: normalizedPreset });
 
     updateSettings.mutate(
-      { appearancePreset: normalizedPreset, _silent: true },
+      { appearancePreset: normalizedPreset, _silent: true, _skipAutoSync: true },
       {
         onSuccess: (updatedSnapshot) => {
           if (lastIntentAppearancePresetRef.current === normalizedPreset) {
-            queryClient.setQueryData(["app-settings-snapshot"], updatedSnapshot);
-            setStoreSettings(updatedSnapshot);
+            syncSettingsSnapshot(updatedSnapshot);
           }
         },
         onError: () => {
           if (lastIntentAppearancePresetRef.current === normalizedPreset) {
-            queryClient.setQueryData(["app-settings-snapshot"], previousSnapshot);
-            setStoreSettings(previousSnapshot);
-            applyAppearancePreset(previousPreset);
+            syncSettingsSnapshot(previousSnapshot);
           }
         },
       }
@@ -652,12 +732,101 @@ export default function SettingsPage() {
 
   const updateBackgroundTasks = (patch: Partial<BackgroundTaskSettings>) => {
     if (!snapshot) return;
-    updateSettings.mutate({
-      backgroundTasks: {
-        ...snapshot.backgroundTasks,
-        ...patch,
-      },
-    });
+    updateSettings.mutate(createBackgroundTasksPatch(patch));
+  };
+
+  const setFreeAccountPreferredModels = (nextModels: string[]) => {
+    const currentSnapshot = getCurrentSettingsSnapshot();
+    if (!currentSnapshot) return;
+    const normalizedModels = normalizePreferredModels(
+      nextModels,
+      freeAccountPreferredModelOptions
+    );
+    if (
+      pendingFreeAccountPreferredModels == null &&
+      arraysEqual(normalizedModels, currentSnapshot.freeAccountPreferredModels || [])
+    ) {
+      return;
+    }
+
+    const previousSnapshot = currentSnapshot;
+    const optimisticSnapshot = {
+      ...currentSnapshot,
+      freeAccountPreferredModels: normalizedModels,
+    };
+    const { intentId, state: nextSaveState } = startPreferredModelSave(
+      freeAccountPreferredSaveStateRef.current
+    );
+
+    freeAccountPreferredSaveStateRef.current = nextSaveState;
+    setPendingFreeAccountPreferredModels(normalizedModels);
+    syncSettingsSnapshot(optimisticSnapshot);
+
+    void freeAccountPreferredSaveQueueRef.current
+      .run(() =>
+        updateSettings.mutateAsync({
+          freeAccountPreferredModels: normalizedModels,
+          _silent: true,
+          _skipAutoSync: true,
+        } as AppSettingsPatch & { _silent: boolean; _skipAutoSync: boolean })
+      )
+      .then((updatedSnapshot) => {
+        const successResult = completePreferredModelSave(
+          freeAccountPreferredSaveStateRef.current,
+          intentId,
+          updatedSnapshot.freeAccountPreferredModels || []
+        );
+        freeAccountPreferredSaveStateRef.current = successResult.state;
+
+        if (successResult.shouldApplyToUi) {
+          setPendingFreeAccountPreferredModels(null);
+          syncSettingsSnapshot(updatedSnapshot);
+        }
+      })
+      .catch(() => {
+        const failureResult = failPreferredModelSave(
+          freeAccountPreferredSaveStateRef.current,
+          intentId
+        );
+        freeAccountPreferredSaveStateRef.current = failureResult.state;
+
+        if (failureResult.shouldRollbackToConfirmedModels) {
+          const rollbackSnapshot = getCurrentSettingsSnapshot() ?? previousSnapshot;
+          setPendingFreeAccountPreferredModels(null);
+          syncSettingsSnapshot({
+            ...rollbackSnapshot,
+            freeAccountPreferredModels: failureResult.confirmedModels,
+          });
+        }
+      });
+  };
+
+  const toggleFreeAccountPreferredModel = (model: string) => {
+    if (!snapshot) return;
+    const current = effectiveFreeAccountPreferredModels;
+    const nextModels = current.includes(model)
+      ? current.filter((item) => item !== model)
+      : [...current, model];
+    setFreeAccountPreferredModels(nextModels);
+  };
+
+  const saveUpstreamProxy = (nextValue: string) => {
+    if (!snapshot) return;
+    const normalized = nextValue.trim();
+    if (normalized === (snapshot.upstreamProxyUrl || "")) {
+      setUpstreamProxyDraft(null);
+      return;
+    }
+    void updateSettings
+      .mutateAsync({ upstreamProxyUrl: normalized })
+      .then(() => setUpstreamProxyDraft(null))
+      .catch(() => undefined);
+  };
+
+  const applyUpstreamProxyQuickFill = (nextValue: string) => {
+    setUpstreamProxyQuickFillOpen(false);
+    setUpstreamProxyDraft(nextValue);
+    saveUpstreamProxy(nextValue);
   };
 
   const saveTransportField = (
@@ -675,7 +844,7 @@ export default function SettingsPage() {
       return;
     }
     void updateSettings
-      .mutateAsync({ [key]: nextValue } as Partial<AppSettings>)
+      .mutateAsync({ [key]: nextValue } as AppSettingsPatch)
       .then(() => {
         setTransportDraft((current) => {
           const nextDraft = { ...current };
@@ -702,12 +871,7 @@ export default function SettingsPage() {
       return;
     }
     void updateSettings
-      .mutateAsync({
-        backgroundTasks: {
-          ...snapshot.backgroundTasks,
-          [key]: nextValue,
-        },
-      })
+      .mutateAsync(createBackgroundTasksPatch({ [key]: nextValue } as Partial<BackgroundTaskSettings>))
       .then(() => {
         setBackgroundTaskDraft((current) => {
           const nextDraft = { ...current };
@@ -721,12 +885,7 @@ export default function SettingsPage() {
   const handleSaveEnv = () => {
     if (!selectedEnvKey || !snapshot) return;
     void updateSettings
-      .mutateAsync({
-        envOverrides: {
-          ...snapshot.envOverrides,
-          [selectedEnvKey]: selectedEnvValue,
-        },
-      })
+      .mutateAsync(createEnvOverridePatch(selectedEnvKey, selectedEnvValue))
       .then(() => {
         setEnvDrafts((current) => {
           const nextDraft = { ...current };
@@ -739,10 +898,8 @@ export default function SettingsPage() {
 
   const handleResetEnv = () => {
     if (!selectedEnvKey || !snapshot) return;
-    const nextOverrides = { ...snapshot.envOverrides };
-    delete nextOverrides[selectedEnvKey];
     void updateSettings
-      .mutateAsync({ envOverrides: nextOverrides })
+      .mutateAsync(createEnvOverrideResetPatch(selectedEnvKey))
       .then(() => {
         setEnvDrafts((current) => {
           const nextDraft = { ...current };
@@ -1142,6 +1299,57 @@ export default function SettingsPage() {
                 </p>
               </div>
 
+              <div className="grid gap-3 rounded-xl border border-border/60 bg-accent/15 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-1">
+                    <Label>对于这些模型，总是优先请求 Free 账号</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      命中选中模型时，会先尝试仍可参与路由的 Free 账号；若没有可用 Free 账号，再回退到其他账号。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setFreeAccountPreferredModels([])}
+                    >
+                      无
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setFreeAccountPreferredModels(freeAccountPreferredModelOptions)
+                      }
+                    >
+                      全部
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {freeAccountPreferredModelOptions.map((model) => {
+                    const selected = effectiveFreeAccountPreferredModels.includes(model);
+                    return (
+                      <button
+                        key={model}
+                        type="button"
+                        onClick={() => toggleFreeAccountPreferredModel(model)}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                          selected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border/70 bg-background/60 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        )}
+                      >
+                        {model}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between border-t pt-6">
                 <div className="space-y-0.5">
                   <Label>请求体压缩</Label>
@@ -1189,7 +1397,10 @@ export default function SettingsPage() {
                   onChange={(event) => setGatewayUserAgentVersionDraft(event.target.value)}
                   onBlur={() => {
                     if (gatewayUserAgentVersionDraft == null) return;
-                    if (gatewayUserAgentVersionInput === (snapshot.gatewayUserAgentVersion || "0.101.0")) {
+                    if (
+                      gatewayUserAgentVersionInput ===
+                      (snapshot.gatewayUserAgentVersion || DEFAULT_GATEWAY_USER_AGENT_VERSION)
+                    ) {
                       setGatewayUserAgentVersionDraft(null);
                       return;
                     }
@@ -1200,7 +1411,7 @@ export default function SettingsPage() {
                   }}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  控制真实出站 <code>User-Agent</code> 里的版本号，默认值为 <code>0.101.0</code>。
+                  控制真实出站 <code>User-Agent</code> 里的版本号，默认值为 <code>0.116.0</code>。
                   官方 Codex 升级后，可以在这里手动同步。
                 </p>
               </div>
@@ -1251,23 +1462,40 @@ export default function SettingsPage() {
 
               <div className="grid gap-2 pt-2">
                 <Label>上游代理 (Proxy)</Label>
-                <Input
-                  placeholder="http://127.0.0.1:7890"
-                  className="h-10 max-w-md font-mono"
-                  value={upstreamProxyInput}
-                  onChange={(event) => setUpstreamProxyDraft(event.target.value)}
-                  onBlur={() => {
-                    if (upstreamProxyDraft == null) return;
-                    if (upstreamProxyInput === (snapshot.upstreamProxyUrl || "")) {
-                      setUpstreamProxyDraft(null);
-                      return;
-                    }
-                    void updateSettings
-                      .mutateAsync({ upstreamProxyUrl: upstreamProxyInput })
-                      .then(() => setUpstreamProxyDraft(null))
-                      .catch(() => undefined);
-                  }}
-                />
+                <div className="relative max-w-md">
+                  <Input
+                    placeholder="socks5://127.0.0.1:10808"
+                    className="h-10 font-mono"
+                    value={upstreamProxyInput}
+                    onChange={(event) => setUpstreamProxyDraft(event.target.value)}
+                    onFocus={() => setUpstreamProxyQuickFillOpen(true)}
+                    onClick={() => setUpstreamProxyQuickFillOpen(true)}
+                    onBlur={() => {
+                      setUpstreamProxyQuickFillOpen(false);
+                      if (upstreamProxyDraft == null) return;
+                      saveUpstreamProxy(upstreamProxyInput);
+                    }}
+                  />
+                  {upstreamProxyQuickFillOpen ? (
+                    <div className="absolute left-0 right-0 top-full z-20 mt-2 rounded-xl border border-border/70 bg-popover p-2 shadow-lg">
+                      <p className="px-2 pb-1 text-[10px] text-muted-foreground">快速填入</p>
+                      {UPSTREAM_PROXY_QUICK_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            applyUpstreamProxyQuickFill(option.value);
+                          }}
+                        >
+                          <span className="font-mono text-xs">{option.label}</span>
+                          <span className="text-[10px] text-muted-foreground">{option.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <p className="text-[10px] text-muted-foreground">支持 http/https/socks5，留空表示直连。</p>
               </div>
 

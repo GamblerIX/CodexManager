@@ -37,7 +37,7 @@ fn build_models_request_headers(
         .filter(|value| !value.is_empty())
     {
         headers.push((
-            crate::gateway::runtime_config::RESIDENCY_HEADER_NAME.to_string(),
+            super::super::runtime_config::RESIDENCY_HEADER_NAME.to_string(),
             residency_requirement.to_string(),
         ));
     }
@@ -72,7 +72,7 @@ fn summarize_models_error_response(
         .or_else(|| extract_response_header(headers, OAI_REQUEST_ID_HEADER));
     let cf_ray = extract_response_header(headers, CF_RAY_HEADER);
     let auth_error = extract_response_header(headers, AUTH_ERROR_HEADER);
-    let identity_error_code = crate::gateway::extract_identity_error_code_from_headers(headers);
+    let identity_error_code = super::super::extract_identity_error_code_from_headers(headers);
     let body_hint = if force_html_error {
         super::super::http_bridge::summarize_upstream_error_hint_from_body(403, body.as_bytes())
     } else {
@@ -140,9 +140,9 @@ pub(super) fn send_models_request(
         let mut builder = http.request(method.clone(), &url);
         for (name, value) in build_models_request_headers(
             bearer.as_str(),
-            crate::gateway::current_codex_user_agent().as_str(),
-            crate::gateway::current_wire_originator().as_str(),
-            crate::gateway::current_residency_requirement().as_deref(),
+            super::super::current_codex_user_agent().as_str(),
+            super::super::current_wire_originator().as_str(),
+            super::super::current_residency_requirement().as_deref(),
             include_account_header,
             account_header_value.as_deref(),
         ) {
@@ -207,7 +207,7 @@ mod tests {
         let actual = append_client_version_query("https://example.com/backend-api/codex/models");
         assert_eq!(
             actual,
-            "https://example.com/backend-api/codex/models?client_version=0.101.0"
+            "https://example.com/backend-api/codex/models?client_version=0.116.0"
         );
     }
 
@@ -217,18 +217,18 @@ mod tests {
             append_client_version_query("https://example.com/backend-api/codex/models?limit=20");
         assert_eq!(
             actual,
-            "https://example.com/backend-api/codex/models?limit=20&client_version=0.101.0"
+            "https://example.com/backend-api/codex/models?limit=20&client_version=0.116.0"
         );
     }
 
     #[test]
     fn append_client_version_query_does_not_duplicate_param() {
         let actual = append_client_version_query(
-            "https://example.com/backend-api/codex/models?client_version=0.101.0",
+            "https://example.com/backend-api/codex/models?client_version=0.116.0",
         );
         assert_eq!(
             actual,
-            "https://example.com/backend-api/codex/models?client_version=0.101.0"
+            "https://example.com/backend-api/codex/models?client_version=0.116.0"
         );
     }
 
@@ -259,7 +259,7 @@ mod tests {
         assert!(find("Cookie").is_none());
         assert_eq!(find("ChatGPT-Account-ID"), Some("acc_123"));
         assert_eq!(
-            find(crate::gateway::runtime_config::RESIDENCY_HEADER_NAME),
+            find(super::super::super::runtime_config::RESIDENCY_HEADER_NAME),
             Some("us")
         );
         assert!(find("Version").is_none());
@@ -285,7 +285,7 @@ mod tests {
 
         assert!(find("Cookie").is_none());
         assert!(find("ChatGPT-Account-ID").is_none());
-        assert!(find(crate::gateway::runtime_config::RESIDENCY_HEADER_NAME).is_none());
+        assert!(find(super::super::super::runtime_config::RESIDENCY_HEADER_NAME).is_none());
     }
 
     #[test]

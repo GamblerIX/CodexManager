@@ -368,7 +368,8 @@ pub(super) fn start_mock_upstream_once_with_content_type(
     (addr.to_string(), rx, join)
 }
 
-pub(super) fn start_mock_upstream_once_with_status_content_type_and_headers(
+pub(super) fn start_mock_upstream_repeat_with_status_content_type_and_headers(
+    repeat: usize,
     status: u16,
     response_body: &str,
     content_type: &str,
@@ -389,23 +390,28 @@ pub(super) fn start_mock_upstream_once_with_status_content_type_and_headers(
     let (tx, rx) = mpsc::channel();
 
     let join = thread::spawn(move || {
-        let (mut stream, captured) = accept_http_request(&listener, Duration::from_secs(3))
-            .expect("accept upstream http request");
-        let _ = tx.send(captured);
+        for _ in 0..repeat {
+            let Some((mut stream, captured)) =
+                accept_http_request(&listener, Duration::from_secs(1))
+            else {
+                break;
+            };
+            let _ = tx.send(captured);
 
-        let mut header = format!(
-            "HTTP/1.1 {status} OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n",
-            response.len()
-        );
-        for (name, value) in extra_headers {
-            header.push_str(&format!("{name}: {value}\r\n"));
+            let mut header = format!(
+                "HTTP/1.1 {status} OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                response.len()
+            );
+            for (name, value) in &extra_headers {
+                header.push_str(&format!("{name}: {value}\r\n"));
+            }
+            header.push_str("\r\n");
+            stream
+                .write_all(header.as_bytes())
+                .expect("write upstream status");
+            stream.write_all(&response).expect("write upstream body");
+            let _ = stream.flush();
         }
-        header.push_str("\r\n");
-        stream
-            .write_all(header.as_bytes())
-            .expect("write upstream status");
-        stream.write_all(&response).expect("write upstream body");
-        let _ = stream.flush();
     });
 
     (addr.to_string(), rx, join)

@@ -1,7 +1,8 @@
 use crate::app_storage::apply_runtime_storage_env;
 use crate::rpc_client::{normalize_addr, rpc_call};
 use crate::service_runtime::{
-    spawn_service_with_addr, stop_service, validate_initialize_response, wait_for_service_ready,
+    remember_connected_service_addr, spawn_service_with_addr, stop_service,
+    validate_initialize_response, wait_for_service_ready,
 };
 
 const SERVICE_READY_RETRIES: usize = 40;
@@ -13,10 +14,15 @@ pub async fn service_initialize(
     addr: Option<String>,
 ) -> Result<serde_json::Value, String> {
     apply_runtime_storage_env(&app);
-    let v = tauri::async_runtime::spawn_blocking(move || rpc_call("initialize", addr, None))
+    let service_addr = addr.as_deref().map(normalize_addr).transpose()?;
+    let rpc_addr = service_addr.clone();
+    let v = tauri::async_runtime::spawn_blocking(move || rpc_call("initialize", rpc_addr, None))
         .await
         .map_err(|err| format!("initialize task failed: {err}"))??;
     validate_initialize_response(&v)?;
+    if let Some(service_addr) = service_addr.as_deref() {
+        remember_connected_service_addr(service_addr);
+    }
     Ok(v)
 }
 
@@ -39,6 +45,7 @@ pub async fn service_start(app: tauri::AppHandle, addr: String) -> Result<(), St
             SERVICE_READY_RETRIES,
             SERVICE_READY_RETRY_DELAY,
         )
+        .map(|_| remember_connected_service_addr(&connect_addr))
         .map_err(|err| {
             log::error!(
                 "service health check failed at {} (bind {}): {}",
@@ -55,8 +62,9 @@ pub async fn service_start(app: tauri::AppHandle, addr: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub async fn service_stop() -> Result<(), String> {
+pub async fn service_stop(app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        apply_runtime_storage_env(&app);
         stop_service();
         Ok(())
     })

@@ -19,17 +19,6 @@ A local desktop + service toolkit for managing Codex-compatible accounts, usage,
 > Secondly, I do not have enough environment to verify that each package has no problem, I have to go to work (I'm just a poor bastard can not afford to buy macs and so on), I only guarantee the availability of Win desktop, if there are problems with the other end, please feedback in the exchange group or submit the Issues after sufficient testing, I will deal with it when I have time.
 > Finally, I would like to thank all the users in the A-flow group for their feedback on the various platforms and their participation in some of the tests. 
 
-
-## Disclaimer
-
-- This project is for learning and development purposes only.
-
-- Users must comply with the terms of service of all relevant platforms (e.g., OpenAI, Anthropic).
-
-- The author does not provide or distribute any accounts, API keys, or proxy services, and is not responsible for how this software is used.
-
-- Do not use this project to bypass rate limits or service restrictions
-
 ## Landing Guide
 | What you want to do | Go here |
 | --- | --- |

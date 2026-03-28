@@ -375,14 +375,14 @@ export function pickBestRecommendations(accounts: Account[]): {
     if (
       account.primaryRemainPercent != null &&
       (!primaryPick ||
-        (primaryPick.primaryRemainPercent ?? -1) < account.primaryRemainPercent)
+        (primaryPick.primaryRemainPercent ?? 101) > account.primaryRemainPercent)
     ) {
       primaryPick = account;
     }
     if (
       account.secondaryRemainPercent != null &&
       (!secondaryPick ||
-        (secondaryPick.secondaryRemainPercent ?? -1) < account.secondaryRemainPercent)
+        (secondaryPick.secondaryRemainPercent ?? 101) > account.secondaryRemainPercent)
     ) {
       secondaryPick = account;
     }

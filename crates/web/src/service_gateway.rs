@@ -17,7 +17,8 @@ pub(super) async fn tcp_probe(addr: &str) -> bool {
         tokio::net::TcpStream::connect(addr),
     )
     .await
-    .is_ok()
+    .map(|result| result.is_ok())
+    .unwrap_or(false)
 }
 
 fn service_bin_path(dir: &Path) -> PathBuf {
@@ -137,4 +138,37 @@ pub(super) async fn quit(State(state): State<Arc<AppState>>) -> impl IntoRespons
     }
     let _ = state.shutdown_tx.send(true);
     Html("<html><body>OK</body></html>")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tcp_probe;
+    use std::net::TcpListener;
+
+    #[test]
+    fn tcp_probe_returns_false_for_connection_refused() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr").to_string();
+        drop(listener);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        assert!(!runtime.block_on(tcp_probe(&addr)));
+    }
+
+    #[test]
+    fn tcp_probe_returns_true_for_open_listener() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr").to_string();
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        assert!(runtime.block_on(tcp_probe(&addr)));
+    }
 }

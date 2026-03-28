@@ -1,5 +1,5 @@
 import { invoke, invokeFirst } from "./transport";
-import { AppSettings } from "../../types";
+import { AppSettings, AppSettingsPatch } from "../../types";
 import { normalizeAppSettings } from "./normalize";
 
 export const appClient = {
@@ -7,7 +7,7 @@ export const appClient = {
     const result = await invoke<unknown>("app_settings_get");
     return normalizeAppSettings(result);
   },
-  async setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  async setSettings(patch: AppSettingsPatch): Promise<AppSettings> {
     const result = await invoke<unknown>("app_settings_set", { patch });
     return normalizeAppSettings(result);
   },

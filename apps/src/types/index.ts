@@ -226,6 +226,8 @@ export interface AppSettings {
   routeStrategyOptions: string[];
   freeAccountMaxModel: string;
   freeAccountMaxModelOptions: string[];
+  freeAccountPreferredModels: string[];
+  freeAccountPreferredModelOptions: string[];
   requestCompressionEnabled: boolean;
   gatewayOriginator: string;
   gatewayUserAgentVersion: string;
@@ -242,6 +244,30 @@ export interface AppSettings {
   theme: string;
   appearancePreset: string;
   [key: string]: unknown;
+}
+
+export interface AppSettingsPatch {
+  updateAutoCheck?: boolean;
+  closeToTrayOnClose?: boolean;
+  lightweightModeOnCloseToTray?: boolean;
+  lowTransparency?: boolean;
+  serviceAddr?: string;
+  serviceListenMode?: string;
+  routeStrategy?: string;
+  freeAccountMaxModel?: string;
+  freeAccountPreferredModels?: string[];
+  requestCompressionEnabled?: boolean;
+  gatewayOriginator?: string;
+  gatewayUserAgentVersion?: string;
+  gatewayResidencyRequirement?: string;
+  upstreamProxyUrl?: string;
+  upstreamStreamTimeoutMs?: number;
+  sseKeepaliveIntervalMs?: number;
+  backgroundTasks?: Partial<BackgroundTaskSettings>;
+  envOverrides?: Record<string, string>;
+  theme?: string;
+  appearancePreset?: string;
+  webAccessPassword?: string;
 }
 
 export interface ServiceInitializationResult {

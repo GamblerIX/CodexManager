@@ -259,7 +259,17 @@ fn simple_get_best_effort(addr: &str, path: &str) {
     };
     let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
     let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {addr_trimmed}\r\nConnection: close\r\n\r\n");
+    let auth_header = if path == "/__shutdown" {
+        format!(
+            "x-codexmanager-rpc-token: {}\r\n",
+            codexmanager_service::rpc_auth_token()
+        )
+    } else {
+        String::new()
+    };
+    let req = format!(
+        "GET {path} HTTP/1.1\r\nHost: {addr_trimmed}\r\n{auth_header}Connection: close\r\n\r\n"
+    );
     let _ = stream.write_all(req.as_bytes());
 }
 

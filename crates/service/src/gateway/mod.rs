@@ -209,7 +209,6 @@ use openai_fallback::try_openai_fallback;
 pub(crate) use request_entry::handle_gateway_request;
 use request_gate::{request_gate_lock, RequestGateAcquireError};
 use request_log::write_request_log;
-use route_hint::apply_route_strategy;
 use route_quality::record_route_quality;
 pub(crate) use runtime_config::front_proxy_max_body_bytes;
 use runtime_config::{
@@ -251,6 +250,14 @@ pub(crate) fn current_free_account_max_model() -> String {
     runtime_config::current_free_account_max_model()
 }
 
+pub(crate) fn current_free_account_preferred_models() -> Vec<String> {
+    runtime_config::current_free_account_preferred_models()
+}
+
+pub(crate) fn should_prioritize_free_account_for_model(model: Option<&str>) -> bool {
+    runtime_config::should_prioritize_free_account_for_model(model)
+}
+
 pub(crate) fn request_compression_enabled() -> bool {
     runtime_config::request_compression_enabled()
 }
@@ -289,6 +296,10 @@ pub(crate) fn current_codex_user_agent() -> String {
 
 pub(crate) fn set_free_account_max_model(model: &str) -> Result<String, String> {
     runtime_config::set_free_account_max_model(model)
+}
+
+pub(crate) fn set_free_account_preferred_models(models: &[String]) -> Result<Vec<String>, String> {
+    runtime_config::set_free_account_preferred_models(models)
 }
 
 pub(crate) fn set_request_compression_enabled(enabled: bool) -> bool {

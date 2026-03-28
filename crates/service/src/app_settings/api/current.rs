@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 
 use super::{
     current_background_tasks_snapshot_value, current_close_to_tray_on_close_setting,
-    current_env_overrides, current_gateway_free_account_max_model, current_gateway_originator,
+    current_env_overrides, current_gateway_free_account_max_model,
+    current_gateway_free_account_preferred_models, current_gateway_originator,
     current_gateway_request_compression_enabled, current_gateway_residency_requirement,
     current_gateway_sse_keepalive_interval_ms, current_gateway_upstream_stream_timeout_ms,
     current_gateway_user_agent_version, current_lightweight_mode_on_close_to_tray_setting,
@@ -16,7 +17,8 @@ use super::{
     residency_requirement_options, save_env_overrides_value, save_persisted_app_setting,
     save_persisted_bool_setting, sync_runtime_settings_from_storage,
     APP_SETTING_CLOSE_TO_TRAY_ON_CLOSE_KEY, APP_SETTING_GATEWAY_BACKGROUND_TASKS_KEY,
-    APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY, APP_SETTING_GATEWAY_ORIGINATOR_KEY,
+    APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY,
+    APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY, APP_SETTING_GATEWAY_ORIGINATOR_KEY,
     APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
     APP_SETTING_GATEWAY_RESIDENCY_REQUIREMENT_KEY, APP_SETTING_GATEWAY_ROUTE_STRATEGY_KEY,
     APP_SETTING_GATEWAY_SSE_KEEPALIVE_INTERVAL_MS_KEY, APP_SETTING_GATEWAY_UPSTREAM_PROXY_URL_KEY,
@@ -39,6 +41,7 @@ const DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS: &[&str] = &[
     "gpt-5.2",
     "gpt-5.2-codex",
     "gpt-5.3-codex",
+    "gpt-5.4-mini",
     "gpt-5.4",
 ];
 
@@ -60,12 +63,15 @@ pub(super) fn current_app_settings_value(
     let service_listen_mode = current_service_bind_mode();
     let route_strategy = crate::gateway::current_route_strategy().to_string();
     let free_account_max_model = current_gateway_free_account_max_model();
+    let free_account_preferred_models = current_gateway_free_account_preferred_models();
     let request_compression_enabled = current_gateway_request_compression_enabled();
     let gateway_originator = current_gateway_originator();
     let gateway_user_agent_version = current_gateway_user_agent_version();
     let gateway_residency_requirement = current_gateway_residency_requirement().unwrap_or_default();
     let free_account_max_model_options =
         load_free_account_max_model_options(&free_account_max_model);
+    let free_account_preferred_model_options =
+        load_free_account_preferred_model_options(&free_account_preferred_models);
     let upstream_proxy_url = crate::gateway::current_upstream_proxy_url();
     let upstream_stream_timeout_ms = current_gateway_upstream_stream_timeout_ms();
     let sse_keepalive_interval_ms = current_gateway_sse_keepalive_interval_ms();
@@ -84,6 +90,7 @@ pub(super) fn current_app_settings_value(
         &service_listen_mode,
         &route_strategy,
         &free_account_max_model,
+        &free_account_preferred_models,
         request_compression_enabled,
         &gateway_originator,
         &gateway_user_agent_version,
@@ -113,6 +120,8 @@ pub(super) fn current_app_settings_value(
         "routeStrategyOptions": ["ordered", "balanced"],
         "freeAccountMaxModel": free_account_max_model,
         "freeAccountMaxModelOptions": free_account_max_model_options,
+        "freeAccountPreferredModels": free_account_preferred_models,
+        "freeAccountPreferredModelOptions": free_account_preferred_model_options,
         "requestCompressionEnabled": request_compression_enabled,
         "gatewayOriginator": gateway_originator,
         "gatewayUserAgentVersion": gateway_user_agent_version,
@@ -135,6 +144,13 @@ fn load_free_account_max_model_options(current: &str) -> Vec<String> {
         .map(|result| result.items)
         .unwrap_or_default();
     collect_free_account_max_model_options(current, &cached)
+}
+
+fn load_free_account_preferred_model_options(current: &[String]) -> Vec<String> {
+    let cached = crate::apikey_models::read_model_options(false)
+        .map(|result| result.items)
+        .unwrap_or_default();
+    collect_free_account_preferred_model_options(current, &cached)
 }
 
 fn collect_free_account_max_model_options(current: &str, cached: &[ModelOption]) -> Vec<String> {
@@ -166,6 +182,25 @@ fn collect_free_account_max_model_options(current: &str, cached: &[ModelOption])
     items
 }
 
+fn collect_free_account_preferred_model_options(
+    current: &[String],
+    cached: &[ModelOption],
+) -> Vec<String> {
+    let mut items = collect_free_account_max_model_options("auto", cached)
+        .into_iter()
+        .filter(|item| item != "auto")
+        .collect::<Vec<_>>();
+    for item in current {
+        let normalized = item.trim().to_ascii_lowercase();
+        if is_free_account_max_model_option(&normalized)
+            && !items.iter().any(|candidate| candidate == &normalized)
+        {
+            items.push(normalized);
+        }
+    }
+    items
+}
+
 fn is_free_account_max_model_option(slug: &str) -> bool {
     let normalized = slug.trim().to_ascii_lowercase();
     !normalized.is_empty() && normalized.starts_with("gpt-") && normalized != "gpt-5.4-pro"
@@ -182,6 +217,7 @@ fn persist_current_snapshot(
     service_listen_mode: &str,
     route_strategy: &str,
     free_account_max_model: &str,
+    free_account_preferred_models: &[String],
     request_compression_enabled: bool,
     gateway_originator: &str,
     gateway_user_agent_version: &str,
@@ -214,6 +250,12 @@ fn persist_current_snapshot(
     let _ = save_persisted_app_setting(
         APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY,
         Some(free_account_max_model),
+    );
+    let free_account_preferred_models_raw =
+        serde_json::to_string(free_account_preferred_models).unwrap_or_else(|_| "[]".to_string());
+    let _ = save_persisted_app_setting(
+        APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY,
+        Some(free_account_preferred_models_raw.as_str()),
     );
     let _ = save_persisted_bool_setting(
         APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
@@ -254,7 +296,10 @@ fn persist_current_snapshot(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_free_account_max_model_options, DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS};
+    use super::{
+        collect_free_account_max_model_options, collect_free_account_preferred_model_options,
+        DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS,
+    };
     use codexmanager_core::rpc::types::ModelOption;
 
     #[test]
@@ -304,5 +349,29 @@ mod tests {
                 "gpt-5.2".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn free_account_max_model_options_include_gpt_5_4_mini_in_curated_defaults() {
+        let actual = collect_free_account_max_model_options("auto", &[]);
+
+        assert!(actual.iter().any(|item| item == "gpt-5.4-mini"));
+        assert_eq!(actual.first().map(String::as_str), Some("auto"));
+    }
+
+    #[test]
+    fn free_account_preferred_model_options_exclude_auto_and_keep_selected_items() {
+        let actual = collect_free_account_preferred_model_options(
+            &["gpt-5.4-mini".to_string(), "gpt-5.2".to_string()],
+            &[ModelOption {
+                slug: "gpt-5.1-codex".to_string(),
+                display_name: "gpt-5.1-codex".to_string(),
+            }],
+        );
+
+        assert!(!actual.iter().any(|item| item == "auto"));
+        assert!(actual.iter().any(|item| item == "gpt-5.4-mini"));
+        assert!(actual.iter().any(|item| item == "gpt-5.2"));
+        assert!(actual.iter().any(|item| item == "gpt-5.1-codex"));
     }
 }

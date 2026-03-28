@@ -1,3 +1,5 @@
+use codexmanager_core::auth::DEFAULT_ORIGINATOR;
+
 use crate::gateway;
 use crate::usage_refresh;
 
@@ -6,7 +8,8 @@ use super::{
     parse_bool_with_default, persisted_env_overrides_missing_process_env,
     reload_runtime_after_env_override_apply, set_service_bind_mode, BackgroundTasksInput,
     APP_SETTING_GATEWAY_BACKGROUND_TASKS_KEY, APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY,
-    APP_SETTING_GATEWAY_ORIGINATOR_KEY, APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
+    APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY, APP_SETTING_GATEWAY_ORIGINATOR_KEY,
+    APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
     APP_SETTING_GATEWAY_RESIDENCY_REQUIREMENT_KEY, APP_SETTING_GATEWAY_ROUTE_STRATEGY_KEY,
     APP_SETTING_GATEWAY_SSE_KEEPALIVE_INTERVAL_MS_KEY, APP_SETTING_GATEWAY_UPSTREAM_PROXY_URL_KEY,
     APP_SETTING_GATEWAY_UPSTREAM_STREAM_TIMEOUT_MS_KEY, APP_SETTING_GATEWAY_USER_AGENT_VERSION_KEY,
@@ -24,8 +27,18 @@ fn any_process_env_has_value(names: &[&str]) -> bool {
     names.iter().any(|name| process_env_has_value(name))
 }
 
+fn parse_persisted_free_account_preferred_models(raw: &str) -> Result<Vec<String>, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str::<Vec<String>>(trimmed)
+        .map_err(|err| format!("parse persisted free account preferred models failed: {err}"))
+}
+
 pub fn sync_runtime_settings_from_storage() {
     let settings = list_app_settings_map();
+    let originator_env_missing_before_apply = !process_env_has_value("CODEXMANAGER_ORIGINATOR");
     let env_overrides = persisted_env_overrides_missing_process_env();
     if !env_overrides.is_empty() {
         apply_env_overrides_to_process(&env_overrides, &env_overrides);
@@ -55,12 +68,31 @@ pub fn sync_runtime_settings_from_storage() {
             }
         }
     }
+    if !process_env_has_value("CODEXMANAGER_FREE_ACCOUNT_PREFERRED_MODELS") {
+        if let Some(raw) = settings.get(APP_SETTING_GATEWAY_FREE_ACCOUNT_PREFERRED_MODELS_KEY) {
+            match parse_persisted_free_account_preferred_models(raw) {
+                Ok(models) => {
+                    if let Err(err) = gateway::set_free_account_preferred_models(&models) {
+                        log::warn!("sync persisted free account preferred models failed: {err}");
+                    }
+                }
+                Err(err) => {
+                    log::warn!("{err}");
+                }
+            }
+        }
+    }
     if !process_env_has_value("CODEXMANAGER_ENABLE_REQUEST_COMPRESSION") {
         if let Some(raw) = settings.get(APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY) {
             gateway::set_request_compression_enabled(parse_bool_with_default(raw, true));
         }
     }
-    if !process_env_has_value("CODEXMANAGER_ORIGINATOR") {
+    let originator_override_is_seeded_default = originator_env_missing_before_apply
+        && env_overrides
+            .get("CODEXMANAGER_ORIGINATOR")
+            .map(|value| value.trim() == DEFAULT_ORIGINATOR)
+            .unwrap_or(false);
+    if !process_env_has_value("CODEXMANAGER_ORIGINATOR") || originator_override_is_seeded_default {
         if let Some(originator) = settings.get(APP_SETTING_GATEWAY_ORIGINATOR_KEY) {
             if let Some(originator) = normalize_optional_text(Some(originator)) {
                 if let Err(err) = gateway::set_originator(&originator) {
@@ -121,6 +153,7 @@ pub fn sync_runtime_settings_from_storage() {
         "CODEXMANAGER_GATEWAY_KEEPALIVE_INTERVAL_SECS",
         "CODEXMANAGER_TOKEN_REFRESH_POLLING_ENABLED",
         "CODEXMANAGER_TOKEN_REFRESH_POLL_INTERVAL_SECS",
+        "CODEXMANAGER_USAGE_REFRESH_WORKERS",
         "CODEXMANAGER_HTTP_WORKER_FACTOR",
         "CODEXMANAGER_HTTP_WORKER_MIN",
         "CODEXMANAGER_HTTP_STREAM_WORKER_FACTOR",
