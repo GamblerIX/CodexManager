@@ -72,6 +72,35 @@ function asInteger(value: unknown, fallback: number, min = 0): number {
   return Math.max(min, Math.trunc(parsed));
 }
 
+function normalizeTags(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => asString(item))
+      .filter(Boolean);
+  }
+
+  const raw = asString(value);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => asString(item))
+        .filter(Boolean);
+    }
+  } catch {
+    // 中文注释：兼容历史上用逗号分隔的 tag 字符串。
+  }
+
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function normalizeStringRecord(payload: unknown): Record<string, string> {
   const source = asObject(payload);
   return Object.entries(source).reduce<Record<string, string>>((result, [key, value]) => {
@@ -173,6 +202,10 @@ export function normalizeAccount(item: unknown, usage?: AccountUsage | null): Ac
     sort: asInteger(source.sort ?? source.priority, 0, 0),
     status,
     statusReason,
+    planType: asString(source.planType ?? source.plan_type) || null,
+    planTypeRaw: asString(source.planTypeRaw ?? source.plan_type_raw) || null,
+    note: asString(source.note) || null,
+    tags: normalizeTags(source.tags),
     isAvailable: availability.level === "ok",
     isLowQuota: isLowQuotaUsage(usage),
     lastRefreshAt: usage?.capturedAt ?? null,
@@ -509,7 +542,7 @@ export function normalizeAppSettings(payload: unknown): AppSettings {
     ).map((item) => asString(item)),
     requestCompressionEnabled: asBoolean(source.requestCompressionEnabled, true),
     gatewayOriginator: asString(source.gatewayOriginator) || "codex_cli_rs",
-    gatewayUserAgentVersion: asString(source.gatewayUserAgentVersion) || "0.116.0",
+    gatewayUserAgentVersion: asString(source.gatewayUserAgentVersion) || "0.117.0",
     gatewayResidencyRequirement: asString(source.gatewayResidencyRequirement),
     gatewayResidencyRequirementOptions: asArray(
       source.gatewayResidencyRequirementOptions

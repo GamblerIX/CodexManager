@@ -630,6 +630,154 @@ fn rpc_account_update_status_toggles_manual_enable_disable() {
 }
 
 #[test]
+fn rpc_account_update_can_persist_label_and_metadata() {
+    let ctx = RpcTestContext::new("rpc-account-update-profile");
+    ctx.seed_accounts(1);
+
+    let server = codexmanager_service::start_one_shot_server().expect("start server");
+    let req = JsonRpcRequest {
+        id: 14,
+        method: "account/update".to_string(),
+        params: Some(serde_json::json!({
+            "accountId": "acc-0",
+            "label": "Primary Account",
+            "note": "Core gateway account",
+            "tags": "team,primary"
+        })),
+    };
+    let json = serde_json::to_string(&req).expect("serialize");
+    let resp = post_rpc(&server.addr, &json);
+    let result = resp.get("result").expect("result");
+    assert_eq!(
+        result.get("ok").and_then(|value| value.as_bool()),
+        Some(true)
+    );
+
+    let storage = Storage::open(ctx.db_path()).expect("open db");
+    let account = storage
+        .find_account_by_id("acc-0")
+        .expect("find account")
+        .expect("account exists");
+    assert_eq!(account.label, "Primary Account");
+    let metadata = storage
+        .find_account_metadata("acc-0")
+        .expect("find metadata")
+        .expect("metadata exists");
+    assert_eq!(metadata.note.as_deref(), Some("Core gateway account"));
+    assert_eq!(metadata.tags.as_deref(), Some("team,primary"));
+}
+
+#[test]
+fn rpc_account_update_can_clear_note_and_tags_with_null() {
+    let ctx = RpcTestContext::new("rpc-account-update-clear-profile");
+    ctx.seed_accounts(1);
+    let storage = Storage::open(ctx.db_path()).expect("open db");
+    storage
+        .upsert_account_metadata("acc-0", Some("Persistent note"), Some("alpha,beta"))
+        .expect("seed metadata");
+
+    let server = codexmanager_service::start_one_shot_server().expect("start server");
+    let req = JsonRpcRequest {
+        id: 15,
+        method: "account/update".to_string(),
+        params: Some(serde_json::json!({
+            "accountId": "acc-0",
+            "label": "Primary Account",
+            "note": null,
+            "tags": null
+        })),
+    };
+    let json = serde_json::to_string(&req).expect("serialize");
+    let resp = post_rpc(&server.addr, &json);
+    let result = resp.get("result").expect("result");
+    assert_eq!(
+        result.get("ok").and_then(|value| value.as_bool()),
+        Some(true)
+    );
+
+    let storage = Storage::open(ctx.db_path()).expect("open db");
+    let account = storage
+        .find_account_by_id("acc-0")
+        .expect("find account")
+        .expect("account exists");
+    assert_eq!(account.label, "Primary Account");
+    assert!(storage
+        .find_account_metadata("acc-0")
+        .expect("find metadata")
+        .is_none());
+}
+
+#[test]
+fn rpc_account_list_includes_plan_and_metadata_fields() {
+    let ctx = RpcTestContext::new("rpc-account-list-plan-and-metadata");
+    let storage = Storage::open(ctx.db_path()).expect("open db");
+    storage.init().expect("init schema");
+    let now = now_ts();
+    storage
+        .insert_account(&Account {
+            id: "acc-plan-meta".to_string(),
+            label: "Plan Meta".to_string(),
+            issuer: "https://auth.openai.com".to_string(),
+            chatgpt_account_id: Some("org-plan".to_string()),
+            workspace_id: Some("org-plan".to_string()),
+            group_name: Some("TEAM".to_string()),
+            sort: 0,
+            status: "active".to_string(),
+            created_at: now,
+            updated_at: now,
+        })
+        .expect("insert account");
+    storage
+        .insert_token(&codexmanager_core::storage::Token {
+            account_id: "acc-plan-meta".to_string(),
+            id_token: build_access_token("sub-plan", "plan@example.com", "org-plan", "business"),
+            access_token: build_access_token(
+                "sub-plan",
+                "plan@example.com",
+                "org-plan",
+                "business",
+            ),
+            refresh_token: "refresh".to_string(),
+            api_key_access_token: None,
+            last_refresh: now,
+        })
+        .expect("insert token");
+    storage
+        .upsert_account_metadata("acc-plan-meta", Some("Billing owner"), Some("billing,prod"))
+        .expect("upsert metadata");
+
+    let server = codexmanager_service::start_one_shot_server().expect("start server");
+    let req = JsonRpcRequest {
+        id: 15,
+        method: "account/list".to_string(),
+        params: None,
+    };
+    let json = serde_json::to_string(&req).expect("serialize");
+    let resp = post_rpc(&server.addr, &json);
+    let items = resp
+        .get("result")
+        .and_then(|value| value.get("items"))
+        .and_then(|value| value.as_array())
+        .expect("items");
+    let account = items
+        .iter()
+        .find(|value| value.get("id").and_then(|item| item.as_str()) == Some("acc-plan-meta"))
+        .expect("account item");
+    assert_eq!(
+        account.get("planType").and_then(|value| value.as_str()),
+        Some("business")
+    );
+    assert_eq!(
+        account.get("note").and_then(|value| value.as_str()),
+        Some("Billing owner")
+    );
+    assert_eq!(
+        account.get("tags").and_then(|value| value.as_str()),
+        Some("billing,prod")
+    );
+}
+
+#[test]
 fn rpc_login_start_returns_url() {
     let _ctx = RpcTestContext::new("rpc-login-start");
     let server = codexmanager_service::start_one_shot_server().expect("start server");

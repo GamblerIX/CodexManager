@@ -5,6 +5,7 @@ use super::{
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::StatusCode;
 use std::sync::{Mutex, MutexGuard};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -19,12 +20,54 @@ fn usage_header_runtime_guard() -> MutexGuard<'static, ()> {
     crate::gateway::gateway_runtime_test_guard()
 }
 
-fn usage_header_runtime_scope() -> (MutexGuard<'static, ()>, UsageHeaderRuntimeRestore) {
+fn unique_db_path(prefix: &str) -> String {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
+    std::env::temp_dir()
+        .join(format!("{prefix}-{nonce}.db"))
+        .to_string_lossy()
+        .to_string()
+}
+
+struct UsageHeaderDbGuard {
+    path: String,
+    previous: Option<String>,
+}
+
+impl UsageHeaderDbGuard {
+    fn new() -> Self {
+        let path = unique_db_path("codexmanager-usage-header-runtime");
+        let previous = std::env::var("CODEXMANAGER_DB_PATH").ok();
+        crate::storage_helpers::clear_storage_cache_for_tests();
+        std::env::set_var("CODEXMANAGER_DB_PATH", &path);
+        Self { path, previous }
+    }
+}
+
+impl Drop for UsageHeaderDbGuard {
+    fn drop(&mut self) {
+        crate::storage_helpers::clear_storage_cache_for_tests();
+        match self.previous.as_deref() {
+            Some(value) => std::env::set_var("CODEXMANAGER_DB_PATH", value),
+            None => std::env::remove_var("CODEXMANAGER_DB_PATH"),
+        }
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn usage_header_runtime_scope() -> (
+    MutexGuard<'static, ()>,
+    UsageHeaderRuntimeRestore,
+    UsageHeaderDbGuard,
+) {
     let guard = usage_header_runtime_guard();
     let restore = UsageHeaderRuntimeRestore::capture();
+    let db_guard = UsageHeaderDbGuard::new();
     let _ = crate::set_gateway_originator("codex_cli_rs");
     let _ = crate::set_gateway_residency_requirement(None);
-    (guard, restore)
+    (guard, restore, db_guard)
 }
 
 struct UsageHeaderRuntimeRestore {
@@ -218,7 +261,7 @@ fn refresh_token_auth_error_reason_from_message_tracks_canonical_messages() {
 
 #[test]
 fn usage_http_default_headers_follow_gateway_runtime_profile() {
-    let (_guard, _restore) = usage_header_runtime_scope();
+    let (_guard, _restore, _db_guard) = usage_header_runtime_scope();
     crate::set_gateway_originator("codex_cli_rs_usage").expect("set gateway originator");
     crate::set_gateway_residency_requirement(Some("us"))
         .expect("set gateway residency requirement");

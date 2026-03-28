@@ -34,14 +34,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useDeferredDesktopActivation } from "@/hooks/useDeferredDesktopActivation";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { accountClient } from "@/lib/api/account-client";
+import { ROOT_PAGE_API_KEYS } from "@/lib/routes/root-page-paths";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatCompactNumber } from "@/lib/utils/usage";
 
 export default function ApiKeysPage() {
   const { serviceStatus } = useAppStore();
+  const dataEnabled = useDeferredDesktopActivation(ROOT_PAGE_API_KEYS);
   const {
     apiKeys,
     isLoading,
@@ -51,7 +54,7 @@ export default function ApiKeysPage() {
     readApiKeySecret,
     isToggling,
     isRefreshingModels,
-  } = useApiKeys();
+  } = useApiKeys({ enabled: dataEnabled });
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, string>>({});
   const [loadingSecretId, setLoadingSecretId] = useState<string | null>(null);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
@@ -73,7 +76,8 @@ export default function ApiKeysPage() {
         return result;
       }, {});
     },
-    enabled: serviceStatus.connected,
+    enabled: serviceStatus.connected && dataEnabled,
+    placeholderData: (previousData) => previousData,
     refetchInterval: 5000,
     retry: 1,
   });

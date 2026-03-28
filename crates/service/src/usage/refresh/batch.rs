@@ -1,3 +1,4 @@
+use crate::account_status::should_skip_background_refresh_for_status_reason;
 use codexmanager_core::storage::{Account, Storage, Token};
 use crossbeam_channel::unbounded;
 use std::collections::HashSet;
@@ -14,9 +15,11 @@ use super::{
 
 pub(crate) fn refresh_usage_for_all_accounts() -> Result<(), String> {
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
+    let accounts = storage.list_accounts().map_err(|e| e.to_string())?;
     let tasks = build_usage_refresh_tasks(
         storage.list_tokens().map_err(|e| e.to_string())?,
-        &storage.list_accounts().map_err(|e| e.to_string())?,
+        &accounts,
+        &load_banned_account_ids(&storage, &accounts)?,
     );
     if tasks.is_empty() {
         return Ok(());
@@ -27,9 +30,11 @@ pub(crate) fn refresh_usage_for_all_accounts() -> Result<(), String> {
 
 pub(crate) fn refresh_usage_for_polling_batch() -> Result<(), String> {
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
+    let accounts = storage.list_accounts().map_err(|e| e.to_string())?;
     let all_tasks = build_usage_refresh_tasks(
         storage.list_tokens().map_err(|e| e.to_string())?,
-        &storage.list_accounts().map_err(|e| e.to_string())?,
+        &accounts,
+        &load_banned_account_ids(&storage, &accounts)?,
     );
     if all_tasks.is_empty() {
         return Ok(());
@@ -86,17 +91,19 @@ struct UsageRefreshBatchTask {
 fn build_usage_refresh_tasks(
     tokens: Vec<Token>,
     accounts: &[Account],
+    banned_ids: &HashSet<String>,
 ) -> Vec<UsageRefreshBatchTask> {
-    let disabled_ids = accounts
+    let mut skipped_ids = accounts
         .iter()
-        .filter(|account| is_account_disabled(account))
+        .filter(|account| is_account_refresh_skipped(account))
         .map(|account| account.id.clone())
         .collect::<HashSet<_>>();
+    skipped_ids.extend(banned_ids.iter().cloned());
     let workspace_map = build_workspace_map_from_accounts(accounts);
 
     tokens
         .into_iter()
-        .filter(|token| !disabled_ids.contains(&token.account_id))
+        .filter(|token| !skipped_ids.contains(&token.account_id))
         .map(|token| {
             let account_id = token.account_id.clone();
             UsageRefreshBatchTask {
@@ -174,7 +181,25 @@ fn usage_refresh_worker_count() -> usize {
     USAGE_REFRESH_WORKERS.load(Ordering::Relaxed).max(1)
 }
 
-fn is_account_disabled(account: &Account) -> bool {
+fn load_banned_account_ids(
+    storage: &Storage,
+    accounts: &[Account],
+) -> Result<HashSet<String>, String> {
+    let account_ids = accounts
+        .iter()
+        .map(|account| account.id.clone())
+        .collect::<Vec<_>>();
+    let reasons = storage
+        .latest_account_status_reasons(&account_ids)
+        .map_err(|err| err.to_string())?;
+    Ok(reasons
+        .into_iter()
+        .filter(|(_, reason)| should_skip_background_refresh_for_status_reason(reason))
+        .map(|(account_id, _)| account_id)
+        .collect())
+}
+
+fn is_account_refresh_skipped(account: &Account) -> bool {
     account.status.trim().eq_ignore_ascii_case("disabled")
 }
 
@@ -249,8 +274,9 @@ fn next_usage_poll_cursor(total: usize, cursor: usize, processed: usize) -> usiz
 
 #[cfg(test)]
 mod tests {
-    use super::build_usage_refresh_tasks;
-    use codexmanager_core::storage::{now_ts, Account, Token};
+    use super::{build_usage_refresh_tasks, load_banned_account_ids};
+    use codexmanager_core::storage::{now_ts, Account, Event, Storage, Token};
+    use std::collections::HashSet;
 
     fn account(id: &str, status: &str, workspace_id: Option<&str>) -> Account {
         Account {
@@ -279,19 +305,24 @@ mod tests {
     }
 
     #[test]
-    fn build_usage_refresh_tasks_skips_disabled_accounts() {
+    fn build_usage_refresh_tasks_skips_disabled_and_banned_accounts() {
         let tasks = build_usage_refresh_tasks(
             vec![
                 token("acc-active"),
                 token("acc-disabled"),
+                token("acc-banned"),
                 token("acc-inactive"),
+                token("acc-unavailable"),
                 token("acc-missing"),
             ],
             &[
                 account("acc-active", "active", Some("ws-active")),
                 account("acc-disabled", "disabled", Some("ws-disabled")),
+                account("acc-banned", "unavailable", Some("ws-banned")),
                 account("acc-inactive", "inactive", Some("ws-inactive")),
+                account("acc-unavailable", "unavailable", Some("ws-unavailable")),
             ],
+            &HashSet::from([String::from("acc-banned")]),
         );
 
         let account_ids = tasks
@@ -300,10 +331,72 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             account_ids,
-            vec!["acc-active", "acc-inactive", "acc-missing"]
+            vec![
+                "acc-active",
+                "acc-inactive",
+                "acc-unavailable",
+                "acc-missing"
+            ]
         );
         assert_eq!(tasks[0].workspace_id.as_deref(), Some("ws-active"));
         assert_eq!(tasks[1].workspace_id.as_deref(), Some("ws-inactive"));
-        assert_eq!(tasks[2].workspace_id, None);
+        assert_eq!(tasks[2].workspace_id.as_deref(), Some("ws-unavailable"));
+        assert_eq!(tasks[3].workspace_id, None);
+    }
+
+    #[test]
+    fn load_banned_account_ids_skips_refresh_invalid_and_deactivated_accounts() {
+        let storage = Storage::open_in_memory().expect("open in memory");
+        storage.init().expect("init schema");
+        let now = now_ts();
+        let accounts = vec![
+            account("acc-active", "active", Some("ws-active")),
+            account("acc-deactivated", "unavailable", Some("ws-deactivated")),
+            account(
+                "acc-refresh-invalid",
+                "unavailable",
+                Some("ws-refresh-invalid"),
+            ),
+            account("acc-reactivated", "active", Some("ws-reactivated")),
+        ];
+        for account in &accounts {
+            storage.insert_account(account).expect("insert account");
+        }
+        for event in [
+            Event {
+                account_id: Some("acc-deactivated".to_string()),
+                event_type: "account_status_update".to_string(),
+                message: "status=unavailable reason=workspace_deactivated".to_string(),
+                created_at: now + 1,
+            },
+            Event {
+                account_id: Some("acc-refresh-invalid".to_string()),
+                event_type: "account_status_update".to_string(),
+                message: "status=unavailable reason=refresh_token_invalid:revoked".to_string(),
+                created_at: now + 2,
+            },
+            Event {
+                account_id: Some("acc-reactivated".to_string()),
+                event_type: "account_status_update".to_string(),
+                message: "status=unavailable reason=account_deactivated".to_string(),
+                created_at: now + 3,
+            },
+            Event {
+                account_id: Some("acc-reactivated".to_string()),
+                event_type: "account_status_update".to_string(),
+                message: "status=active reason=login".to_string(),
+                created_at: now + 4,
+            },
+        ] {
+            storage.insert_event(&event).expect("insert event");
+        }
+
+        let skipped =
+            load_banned_account_ids(&storage, &accounts).expect("load skipped account ids");
+
+        assert!(skipped.contains("acc-deactivated"));
+        assert!(skipped.contains("acc-refresh-invalid"));
+        assert!(!skipped.contains("acc-active"));
+        assert!(!skipped.contains("acc-reactivated"));
     }
 }

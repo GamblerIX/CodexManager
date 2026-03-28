@@ -11,7 +11,28 @@ enum AccountUsageQueryMode {
 impl Storage {
     pub fn insert_account(&self, account: &Account) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO accounts (id, label, issuer, chatgpt_account_id, workspace_id, group_name, sort, status, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO accounts (
+                id,
+                label,
+                issuer,
+                chatgpt_account_id,
+                workspace_id,
+                group_name,
+                sort,
+                status,
+                created_at,
+                updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            ON CONFLICT(id) DO UPDATE SET
+                label = excluded.label,
+                issuer = excluded.issuer,
+                chatgpt_account_id = excluded.chatgpt_account_id,
+                workspace_id = excluded.workspace_id,
+                group_name = excluded.group_name,
+                sort = excluded.sort,
+                status = excluded.status,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at",
             (
                 &account.id,
                 &account.label,
@@ -168,6 +189,14 @@ impl Storage {
         Ok(())
     }
 
+    pub fn update_account_label(&self, account_id: &str, label: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE accounts SET label = ?1, updated_at = ?2 WHERE id = ?3",
+            (label, now_ts(), account_id),
+        )?;
+        Ok(())
+    }
+
     pub fn update_account_status(&self, account_id: &str, status: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE accounts SET status = ?1, updated_at = ?2 WHERE id = ?3",
@@ -184,6 +213,14 @@ impl Storage {
         Ok(updated > 0)
     }
 
+    pub fn touch_account_updated_at(&self, account_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE accounts SET updated_at = ?1 WHERE id = ?2",
+            (now_ts(), account_id),
+        )?;
+        Ok(())
+    }
+
     pub fn delete_account(&mut self, account_id: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
         tx.execute("DELETE FROM tokens WHERE account_id = ?1", [account_id])?;
@@ -192,6 +229,7 @@ impl Storage {
             [account_id],
         )?;
         tx.execute("DELETE FROM events WHERE account_id = ?1", [account_id])?;
+        tx.execute("DELETE FROM account_metadata WHERE account_id = ?1", [account_id])?;
         tx.execute(
             "DELETE FROM conversation_bindings WHERE account_id = ?1",
             [account_id],

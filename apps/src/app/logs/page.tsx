@@ -40,7 +40,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useDeferredDesktopActivation } from "@/hooks/useDeferredDesktopActivation";
 import { accountClient } from "@/lib/api/account-client";
+import { ROOT_PAGE_LOGS } from "@/lib/routes/root-page-paths";
 import { serviceClient } from "@/lib/api/service-client";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { formatCompactNumber, formatTsFromSeconds } from "@/lib/utils/usage";
@@ -450,6 +452,7 @@ function ModelEffortCell({ log }: { log: RequestLog }) {
 function LogsPageContent() {
   const searchParams = useSearchParams();
   const { serviceStatus } = useAppStore();
+  const dataEnabled = useDeferredDesktopActivation(ROOT_PAGE_LOGS);
   const queryClient = useQueryClient();
   const [search, setSearch] = useState(() => searchParams.get("query") || "");
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -461,7 +464,8 @@ function LogsPageContent() {
   const { data: accountsResult } = useQuery({
     queryKey: ["accounts", "lookup"],
     queryFn: () => accountClient.list(),
-    enabled: serviceStatus.connected,
+    enabled: serviceStatus.connected && dataEnabled,
+    placeholderData: (previousData) => previousData,
     staleTime: 60_000,
     retry: 1,
   });
@@ -475,7 +479,7 @@ function LogsPageContent() {
         page,
         pageSize: pageSizeNumber,
       }),
-    enabled: serviceStatus.connected,
+    enabled: serviceStatus.connected && dataEnabled,
     refetchInterval: 5000,
     retry: 1,
     placeholderData: (previousData) => previousData,
@@ -488,7 +492,7 @@ function LogsPageContent() {
         query: search,
         statusFilter: filter,
       }),
-    enabled: serviceStatus.connected,
+    enabled: serviceStatus.connected && dataEnabled,
     refetchInterval: 5000,
     retry: 1,
     placeholderData: (previousData) => previousData,
@@ -844,10 +848,17 @@ function LogsPageContent() {
   );
 }
 
+function LogsPageKeyedContent() {
+  const searchParams = useSearchParams();
+  const queryKey = searchParams.get("query") || "";
+
+  return <LogsPageContent key={queryKey} />;
+}
+
 export default function LogsPage() {
   return (
     <Suspense fallback={<LogsPageSkeleton />}>
-      <LogsPageContent />
+      <LogsPageKeyedContent />
     </Suspense>
   );
 }

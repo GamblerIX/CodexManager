@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { Providers } from "@/components/providers";
 import { AppBootstrap } from "@/components/layout/app-bootstrap";
+import { DesktopPageViewport } from "@/components/layout/desktop-page-viewport";
 import {
   appearanceInitScript,
   DEFAULT_APPEARANCE_PRESET,
@@ -33,7 +34,9 @@ export default function RootLayout({
               <Sidebar />
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <Header />
-                <main className="min-w-0 flex-1 overflow-y-auto p-6 no-scrollbar">{children}</main>
+                <main className="min-w-0 flex-1 overflow-y-auto p-6 no-scrollbar">
+                  <DesktopPageViewport>{children}</DesktopPageViewport>
+                </main>
               </div>
             </div>
           </AppBootstrap>

@@ -4,8 +4,9 @@ use super::{
     parse_sse_frame_json, parse_usage_from_json, parse_usage_from_sse_frame,
     should_skip_chat_live_text_event, should_skip_completion_live_text_event,
     synthesize_chat_completion_sse_from_json, synthesize_completions_sse_from_json,
-    OpenAIChatCompletionsSseReader, OpenAICompletionsSseReader, OpenAIStreamMeta,
-    PassthroughSseCollector, PassthroughSseUsageReader, SseKeepAliveFrame,
+    AnthropicSseReader, OpenAIChatCompletionsSseReader, OpenAICompletionsSseReader,
+    OpenAIStreamMeta, PassthroughSseCollector, PassthroughSseUsageReader, SseKeepAliveFrame,
+    UpstreamResponseUsage,
 };
 use serde_json::json;
 use std::io::{Read, Write};
@@ -79,12 +80,15 @@ fn open_streaming_mock_http_response(
         .iter()
         .map(|(chunk, delay_ms)| ((*chunk).to_string(), *delay_ms))
         .collect::<Vec<_>>();
+    let body_len: usize = chunks.iter().map(|(chunk, _)| chunk.as_bytes().len()).sum();
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept mock client");
         let mut request_buf = [0_u8; 2048];
         let _ = stream.read(&mut request_buf);
         let response_header =
-            format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n");
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n"
+            );
         stream
             .write_all(response_header.as_bytes())
             .expect("write streaming response headers");
@@ -761,6 +765,56 @@ fn passthrough_sse_reader_emits_keepalive_for_responses_stream() {
     assert!(mapped.contains("\"type\":\"codexmanager.keepalive\""));
     assert!(mapped.contains("\"type\":\"response.created\""));
     assert!(mapped.contains("data: [DONE]"));
+}
+
+#[test]
+fn anthropic_sse_reader_emits_final_usage_fields() {
+    let (upstream, server) = open_streaming_mock_http_response(
+        "text/event-stream",
+        &[
+            ("data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n", 0),
+            (
+                "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_reader_1\",\"model\":\"gpt-5.3-codex\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]}],\"usage\":{\"input_tokens\":11,\"output_tokens\":3,\"total_tokens\":14,\"input_tokens_details\":{\"cached_tokens\":6},\"output_tokens_details\":{\"reasoning_tokens\":2}}}}\n\n",
+                0,
+            ),
+            ("data: [DONE]\n\n", 0),
+        ],
+    );
+    let usage_collector = Arc::new(Mutex::new(UpstreamResponseUsage::default()));
+    let mut reader = AnthropicSseReader::new(upstream, Arc::clone(&usage_collector));
+    let mut mapped = String::new();
+    reader
+        .read_to_string(&mut mapped)
+        .expect("read anthropic sse");
+    server.join().expect("join streaming mock upstream");
+
+    let mut final_usage: Option<serde_json::Value> = None;
+    for line in mapped.lines() {
+        if !line.starts_with("data: ") {
+            continue;
+        }
+        let payload = &line["data: ".len()..];
+        let value: serde_json::Value =
+            serde_json::from_str(payload).expect("parse anthropic sse payload");
+        if value["type"] == "message_delta" {
+            final_usage = value.get("usage").cloned();
+        }
+    }
+
+    let final_usage = final_usage.expect("message_delta usage");
+    assert_eq!(final_usage["input_tokens"], 11);
+    assert_eq!(final_usage["output_tokens"], 3);
+    assert_eq!(final_usage["cache_read_input_tokens"], 6);
+
+    let usage = usage_collector
+        .lock()
+        .expect("lock usage collector")
+        .clone();
+    assert_eq!(usage.input_tokens, Some(11));
+    assert_eq!(usage.cached_input_tokens, Some(6));
+    assert_eq!(usage.output_tokens, Some(3));
+    assert_eq!(usage.total_tokens, Some(14));
+    assert_eq!(usage.reasoning_output_tokens, Some(2));
 }
 
 #[test]

@@ -3,7 +3,7 @@ use codexmanager_core::auth::{
     token_exchange_body_authorization_code, token_exchange_body_token_exchange, IdTokenClaims,
     DEFAULT_CLIENT_ID, DEFAULT_ISSUER,
 };
-use codexmanager_core::storage::{now_ts, Account, Token};
+use codexmanager_core::storage::{now_ts, Account, Event, Token};
 use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
 use reqwest::Error as ReqwestError;
@@ -617,6 +617,41 @@ pub(crate) fn complete_login_with_redirect(
     storage
         .insert_account(&account)
         .map_err(|e| e.to_string())?;
+    // 重新登录时，如果本次 session 没有填写 note/tags，保留已有账号的元数据，
+    // 避免默认空值把原来保存的备注/标签意外清空。
+    let session_note = session.note.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let session_tags = session.tags.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let has_session_metadata = session_note.is_some() || session_tags.is_some();
+
+    if has_session_metadata {
+        let existing = storage
+            .find_account_metadata(&account_key)
+            .map_err(|e| e.to_string())?;
+        let final_note = session_note
+            .map(ToString::to_string)
+            .or_else(|| existing.as_ref().and_then(|m| m.note.clone()));
+        let final_tags = session_tags
+            .map(ToString::to_string)
+            .or_else(|| existing.as_ref().and_then(|m| m.tags.clone()));
+        storage
+            .upsert_account_metadata(
+                &account_key,
+                final_note.as_deref(),
+                final_tags.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    // 如果 session 的 note 和 tags 都为空，不调用 upsert，保留已有元数据不变。
+
+    // 重新登录成功时，补一条 status=active 的事件，清除 events 中可能残留的
+    // account_deactivated/workspace_deactivated 等封禁原因，否则
+    // list_tokens_due_for_refresh 和 usage refresh 会继续按旧封禁跳过该账号。
+    let _ = storage.insert_event(&Event {
+        account_id: Some(account_key.clone()),
+        event_type: "account_status_update".to_string(),
+        message: "status=active reason=login".to_string(),
+        created_at: now,
+    });
 
     // 写入 token
     let token = Token {

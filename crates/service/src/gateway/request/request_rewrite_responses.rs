@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use super::super::protocol_adapter::fix_array_items_in_schema;
 use super::request_rewrite_shared::{
     path_matches_template, retain_fields_by_templates, TemplateAllowlist,
 };
@@ -117,21 +118,22 @@ pub(super) fn ensure_prompt_cache_key(
     else {
         return false;
     };
-
-    match obj.get("prompt_cache_key") {
-        Some(Value::String(existing)) if !force_override && !existing.trim().is_empty() => {
-            return false;
-        }
-        Some(Value::String(existing)) if force_override && existing.trim() == prompt_cache_key => {
-            return false;
-        }
-        Some(_) => {}
-        None => {}
+    let existing = obj.get("prompt_cache_key").and_then(Value::as_str);
+    let decision = super::prompt_cache::resolve_prompt_cache_key_rewrite(
+        existing,
+        Some(prompt_cache_key),
+        force_override,
+    );
+    let Some(final_value) = decision.final_value else {
+        return false;
+    };
+    if !decision.changed {
+        return false;
     }
 
     obj.insert(
         "prompt_cache_key".to_string(),
-        Value::String(prompt_cache_key.to_string()),
+        Value::String(final_value.to_string()),
     );
     true
 }
@@ -304,6 +306,7 @@ pub(super) fn normalize_dynamic_tools_to_tools(
             .or_else(|| tool_obj.get("parameters"))
             .cloned()
             .unwrap_or_else(|| serde_json::json!({ "type": "object", "properties": {} }));
+        let parameters = fix_array_items_in_schema(parameters);
 
         let mut mapped = serde_json::Map::new();
         mapped.insert("type".to_string(), Value::String("function".to_string()));

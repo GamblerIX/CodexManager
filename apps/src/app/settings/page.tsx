@@ -4,8 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { useDeferredDesktopActivation } from "@/hooks/useDeferredDesktopActivation";
+import { useRuntimeCapabilities } from "@/hooks/useRuntimeCapabilities";
 import { appClient } from "@/lib/api/app-client";
-import { getAppErrorMessage, isTauriRuntime } from "@/lib/api/transport";
+import { getAppErrorMessage } from "@/lib/api/transport";
+import { ROOT_PAGE_SETTINGS } from "@/lib/routes/root-page-paths";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { createSerializedTaskQueue } from "@/lib/utils/serialized-task-queue";
 import {
@@ -130,7 +133,7 @@ const DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS = [
 const DEFAULT_FREE_ACCOUNT_PREFERRED_MODEL_OPTIONS = DEFAULT_FREE_ACCOUNT_MAX_MODEL_OPTIONS.filter(
   (model) => model !== "auto"
 );
-const DEFAULT_GATEWAY_USER_AGENT_VERSION = "0.116.0";
+const DEFAULT_GATEWAY_USER_AGENT_VERSION = "0.117.0";
 const UPSTREAM_PROXY_QUICK_OPTIONS = [
   {
     value: "socks5://127.0.0.1:10808",
@@ -317,7 +320,9 @@ export default function SettingsPage() {
   const { setAppSettings: setStoreSettings } = useAppStore();
   const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
-  const isDesktopRuntime = isTauriRuntime();
+  const runtimeCapabilities = useRuntimeCapabilities();
+  const isDesktopRuntime = runtimeCapabilities.isDesktop;
+  const dataEnabled = useDeferredDesktopActivation(ROOT_PAGE_SETTINGS);
   const lastSyncedSnapshotThemeRef = useRef<string | null>(null);
   const lastSyncedAppearancePresetRef = useRef<string | null>(null);
   const autoUpdateCheckedRef = useRef(false);
@@ -346,6 +351,8 @@ export default function SettingsPage() {
   const { data: snapshot, isLoading } = useQuery({
     queryKey: ["app-settings-snapshot"],
     queryFn: () => appClient.getSettings(),
+    enabled: dataEnabled,
+    placeholderData: (previousData) => previousData,
   });
 
   const syncSettingsSnapshot = (nextSnapshot: AppSettings) => {
@@ -1411,7 +1418,7 @@ export default function SettingsPage() {
                   }}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  控制真实出站 <code>User-Agent</code> 里的版本号，默认值为 <code>0.116.0</code>。
+                  控制真实出站 <code>User-Agent</code> 里的版本号，默认值为 <code>0.117.0</code>。
                   官方 Codex 升级后，可以在这里手动同步。
                 </p>
               </div>

@@ -126,6 +126,63 @@ impl Storage {
         Ok(out)
     }
 
+    pub fn latest_usage_snapshots_by_account_ids(
+        &self,
+        account_ids: &[String],
+    ) -> Result<Vec<UsageSnapshotRecord>> {
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = account_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "WITH ranked AS (
+                SELECT
+                    id,
+                    account_id,
+                    used_percent,
+                    window_minutes,
+                    resets_at,
+                    secondary_used_percent,
+                    secondary_window_minutes,
+                    secondary_resets_at,
+                    credits_json,
+                    captured_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY account_id
+                        ORDER BY captured_at DESC, id DESC
+                    ) AS rn
+                FROM usage_snapshots
+                WHERE account_id IN ({placeholders})
+            )
+            SELECT
+                account_id,
+                used_percent,
+                window_minutes,
+                resets_at,
+                secondary_used_percent,
+                secondary_window_minutes,
+                secondary_resets_at,
+                credits_json,
+                captured_at
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY captured_at DESC, id DESC"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params = rusqlite::params_from_iter(account_ids.iter());
+        let mut rows = stmt.query(params)?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            out.push(map_usage_snapshot_row(row)?);
+        }
+        Ok(out)
+    }
+
     pub(super) fn ensure_usage_secondary_columns(&self) -> Result<()> {
         self.ensure_column("usage_snapshots", "secondary_used_percent", "REAL")?;
         self.ensure_column("usage_snapshots", "secondary_window_minutes", "INTEGER")?;

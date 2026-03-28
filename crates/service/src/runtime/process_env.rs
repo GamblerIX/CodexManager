@@ -250,6 +250,7 @@ mod tests {
 
     #[test]
     fn ensure_default_db_path_resolves_relative_env_against_exe_dir() {
+        let _runtime_guard = crate::gateway::gateway_runtime_test_guard();
         let _db_guard = EnvGuard::set(ENV_DB_PATH, Some("./data/codexmanager.db"));
 
         let resolved = ensure_default_db_path();
@@ -263,6 +264,7 @@ mod tests {
 
     #[test]
     fn rpc_token_file_path_resolves_relative_env_against_exe_dir() {
+        let _runtime_guard = crate::gateway::gateway_runtime_test_guard();
         let _db_guard = EnvGuard::set(ENV_DB_PATH, Some("./data/codexmanager.db"));
         let _token_guard = EnvGuard::set(ENV_RPC_TOKEN_FILE, Some("./data/codexmanager.rpc-token"));
 

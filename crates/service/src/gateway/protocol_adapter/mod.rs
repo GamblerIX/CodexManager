@@ -7,6 +7,7 @@ mod response_conversion;
 mod types;
 
 pub(super) use self::request_router::adapt_request_for_protocol;
+pub(crate) use self::request_mapping::fix_array_items_in_schema;
 pub(super) use self::types::{AdaptedGatewayRequest, ResponseAdapter, ToolNameRestoreMap};
 
 pub(super) fn adapt_upstream_response(

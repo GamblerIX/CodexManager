@@ -1,4 +1,4 @@
-pub(crate) const CODEX_CLIENT_VERSION: &str = "0.116.0";
+pub(crate) const CODEX_CLIENT_VERSION: &str = "0.117.0";
 
 pub(crate) struct CodexUpstreamHeaderInput<'a> {
     pub(crate) auth_token: &'a str,

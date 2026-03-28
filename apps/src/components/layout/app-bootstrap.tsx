@@ -7,6 +7,7 @@ import { AlertCircle, Play, RefreshCw } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/useAppStore";
+import { useRuntimeCapabilities } from "@/hooks/useRuntimeCapabilities";
 import { accountClient } from "@/lib/api/account-client";
 import { serviceClient } from "@/lib/api/service-client";
 import {
@@ -15,7 +16,6 @@ import {
   STARTUP_SNAPSHOT_STALE_TIME,
 } from "@/lib/api/startup-snapshot";
 import { appClient } from "@/lib/api/app-client";
-import { isTauriRuntime } from "@/lib/api/transport";
 import { Button } from "@/components/ui/button";
 import { applyAppearancePreset } from "@/lib/appearance";
 import {
@@ -36,6 +36,7 @@ const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve
 
 export function AppBootstrap({ children }: { children: React.ReactNode }) {
   const { setServiceStatus, setAppSettings, serviceStatus } = useAppStore();
+  const runtimeCapabilities = useRuntimeCapabilities();
   const { setTheme } = useTheme();
   const queryClient = useQueryClient();
   const pathname = usePathname();
@@ -47,7 +48,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
   const retryInitRef = useRef<(() => Promise<void>) | null>(null);
   const serviceStatusRef = useRef(serviceStatus);
   const [error, setError] = useState<string | null>(null);
-  const supportsLocalServiceStart = isTauriRuntime();
+  const supportsLocalServiceStart = runtimeCapabilities.supportsLocalServiceControl;
 
   useEffect(() => {
     serviceStatusRef.current = serviceStatus;
@@ -331,7 +332,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const init = useCallback(async () => {
-    const desktopRuntime = isTauriRuntime();
+    const desktopRuntime = runtimeCapabilities.isDesktop;
 
     // Only show full screen loading if we haven't initialized once
     if (!hasInitializedOnce.current) {
@@ -395,6 +396,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
   }, [
     applyConnectedServiceState,
     initializeService,
+    runtimeCapabilities.isDesktop,
     scheduleBootstrapRecovery,
     setAppSettings,
     setServiceStatus,
@@ -404,7 +406,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
   ]);
 
   const handleForceStart = async () => {
-    if (!isTauriRuntime()) {
+    if (!runtimeCapabilities.isDesktop) {
       void init();
       return;
     }
@@ -463,7 +465,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => warmupDevRouteTransitions(), [warmupDevRouteTransitions]);
 
   useEffect(() => {
-    if (isTauriRuntime() || typeof window === "undefined") {
+    if (runtimeCapabilities.isDesktop || typeof window === "undefined") {
       return;
     }
 
@@ -473,7 +475,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
     }
 
     window.history.replaceState(window.history.state, "", canonicalUrl);
-  }, [pathname]);
+  }, [pathname, runtimeCapabilities.isDesktop]);
 
   const showLoading = isInitializing && !hasInitializedOnce.current;
   const showError = !!error && !hasInitializedOnce.current;

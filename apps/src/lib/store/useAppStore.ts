@@ -64,7 +64,7 @@ export const useAppStore = create<AppState>((set) => ({
     ],
     requestCompressionEnabled: true,
     gatewayOriginator: "codex_cli_rs",
-    gatewayUserAgentVersion: "0.116.0",
+    gatewayUserAgentVersion: "0.117.0",
     gatewayResidencyRequirement: "",
     gatewayResidencyRequirementOptions: ["", "us"],
     upstreamProxyUrl: "",

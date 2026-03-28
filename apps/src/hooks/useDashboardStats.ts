@@ -14,18 +14,20 @@ import { serviceClient } from "@/lib/api/service-client";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { pickBestRecommendations, pickCurrentAccount } from "@/lib/utils/usage";
 
-export function useDashboardStats() {
+export function useDashboardStats(options: { enabled?: boolean } = {}) {
   const serviceStatus = useAppStore((state) => state.serviceStatus);
+  const enabled = options.enabled ?? true;
   const isServiceReady = serviceStatus.connected;
+  const canUseSnapshotData = enabled && isServiceReady;
   const warmupStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!isServiceReady) {
+    if (!enabled || !isServiceReady) {
       warmupStartedAtRef.current = null;
       return;
     }
     warmupStartedAtRef.current = Date.now();
-  }, [isServiceReady, serviceStatus.addr]);
+  }, [enabled, isServiceReady, serviceStatus.addr]);
 
   const snapshotQuery = useQuery({
     queryKey: buildStartupSnapshotQueryKey(
@@ -36,11 +38,13 @@ export function useDashboardStats() {
       serviceClient.getStartupSnapshot({
         requestLogLimit: STARTUP_SNAPSHOT_REQUEST_LOG_LIMIT,
       }),
-    enabled: isServiceReady,
+    enabled: canUseSnapshotData,
     retry: 1,
     staleTime: STARTUP_SNAPSHOT_STALE_TIME,
+    placeholderData: (previousData) =>
+      canUseSnapshotData ? previousData : undefined,
     refetchInterval: (query) => {
-      if (!isServiceReady) return false;
+      if (!enabled || !isServiceReady) return false;
       const startedAt = warmupStartedAtRef.current;
       if (startedAt == null) return false;
       if (Date.now() - startedAt >= STARTUP_SNAPSHOT_WARMUP_TIMEOUT_MS) {
@@ -60,10 +64,12 @@ export function useDashboardStats() {
     refetchIntervalInBackground: true,
   });
 
-  const data = snapshotQuery.data;
+  const data = canUseSnapshotData ? snapshotQuery.data : undefined;
   const accounts = data?.accounts || [];
   const hasStartupSignal = hasStartupSnapshotSignal(data);
+  const hasSnapshotData = data !== undefined;
   const shouldWarmupPoll =
+    enabled &&
     isServiceReady &&
     accounts.length > 0 &&
     !hasStartupSignal &&
@@ -99,9 +105,13 @@ export function useDashboardStats() {
     currentAccount,
     recommendations,
     requestLogs: data?.requestLogs || [],
-    isLoading: !isServiceReady || snapshotQuery.isPending || shouldWarmupPoll,
+    isLoading:
+      !hasSnapshotData &&
+      enabled &&
+      (!isServiceReady || snapshotQuery.isPending || shouldWarmupPoll),
     isSyncingSnapshot: shouldWarmupPoll,
     isServiceReady,
+    hasSnapshotData,
     isError: snapshotQuery.isError,
     error: snapshotQuery.error,
   };

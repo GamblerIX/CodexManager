@@ -7,18 +7,23 @@ import { getAppErrorMessage } from "@/lib/api/transport";
 
 type ApiKeyPayload = Parameters<typeof accountClient.createApiKey>[0];
 
-export function useApiKeys() {
+export function useApiKeys(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
+  const enabled = options.enabled ?? true;
 
   const apiKeysQuery = useQuery({
     queryKey: ["apikeys"],
     queryFn: () => accountClient.listApiKeys(),
+    enabled,
+    placeholderData: (previousData) => previousData,
     retry: 1,
   });
 
   const modelsQuery = useQuery({
     queryKey: ["apikey-models"],
     queryFn: () => accountClient.listModels(false),
+    enabled,
+    placeholderData: (previousData) => previousData,
     retry: 1,
   });
 
@@ -99,8 +104,9 @@ export function useApiKeys() {
   return {
     apiKeys: apiKeysQuery.data || [],
     models: modelsQuery.data || [],
-    isLoading: apiKeysQuery.isLoading,
-    isModelsLoading: modelsQuery.isLoading,
+    isLoading: enabled && apiKeysQuery.data === undefined && apiKeysQuery.isLoading,
+    isModelsLoading:
+      enabled && modelsQuery.data === undefined && modelsQuery.isLoading,
     createApiKey: createMutation.mutateAsync,
     deleteApiKey: deleteMutation.mutate,
     updateApiKey: updateMutation.mutateAsync,

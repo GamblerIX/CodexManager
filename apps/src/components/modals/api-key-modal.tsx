@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -361,9 +362,12 @@ export function ApiKeyModal({ open, onOpenChange, apiKey }: ApiKeyModalProps) {
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <DialogClose
+            className={buttonVariants({ variant: "ghost" })}
+            type="button"
+          >
             {generatedKey ? "关闭" : "取消"}
-          </Button>
+          </DialogClose>
           {!generatedKey && (
             <Button onClick={handleSave} disabled={isLoading}>
               {isLoading ? "保存中..." : "完成"}

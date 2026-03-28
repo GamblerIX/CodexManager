@@ -201,6 +201,15 @@ fn init_tracks_schema_migrations_and_is_idempotent() {
         )
         .expect("count 035 migration");
     assert_eq!(applied_035, 1);
+    let applied_036: i64 = storage
+        .conn
+        .query_row(
+            "SELECT COUNT(1) FROM schema_migrations WHERE version = '036_account_metadata'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count 036 migration");
+    assert_eq!(applied_036, 1);
 
     assert!(!storage
         .has_column("accounts", "note")
@@ -253,6 +262,15 @@ fn init_tracks_schema_migrations_and_is_idempotent() {
     assert!(storage
         .has_column("api_key_profiles", "service_tier")
         .expect("check api_key_profiles.service_tier"));
+    assert!(storage
+        .has_column("account_metadata", "note")
+        .expect("check account_metadata.note"));
+    assert!(storage
+        .has_column("account_metadata", "tags")
+        .expect("check account_metadata.tags"));
+    assert!(storage
+        .has_column("accounts", "group_name")
+        .expect("check accounts.group_name"));
     assert!(!storage
         .has_column("request_logs", "input_tokens")
         .expect("check request_logs.input_tokens"));
@@ -268,6 +286,46 @@ fn init_tracks_schema_migrations_and_is_idempotent() {
     assert!(!storage
         .has_column("request_logs", "reasoning_output_tokens")
         .expect("check request_logs.reasoning_output_tokens"));
+}
+
+#[test]
+fn account_metadata_migration_backfills_tracker_without_removing_group_name() {
+    let storage = Storage::open_in_memory().expect("open in memory");
+    storage
+        .ensure_migrations_table()
+        .expect("ensure migration tracker");
+    storage
+        .conn
+        .execute_batch(
+            "CREATE TABLE accounts (
+                id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                issuer TEXT NOT NULL,
+                chatgpt_account_id TEXT,
+                workspace_id TEXT,
+                group_name TEXT,
+                sort INTEGER DEFAULT 0,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );",
+        )
+        .expect("create legacy accounts");
+
+    storage
+        .apply_sql_or_compat_migration(
+            "036_account_metadata",
+            include_str!("../../migrations/036_account_metadata.sql"),
+            |s| s.ensure_account_metadata_table(),
+        )
+        .expect("apply 036 migration");
+
+    assert!(storage
+        .has_column("accounts", "group_name")
+        .expect("check group_name"));
+    assert!(storage
+        .has_column("account_metadata", "note")
+        .expect("check metadata note"));
 }
 
 #[test]

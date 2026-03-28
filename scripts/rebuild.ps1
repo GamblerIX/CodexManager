@@ -34,6 +34,8 @@ $rootTarget = Join-Path $root "target"
 $tauriTarget = Join-Path $tauriDir "target"
 $distDir = Join-Path $frontendRoot "out"
 $tauriConfig = Join-Path $tauriDir "tauri.conf.json"
+# Keep this aligned with .github/workflows/release-all.yml and build-tauri-with-retry.
+$tauriCliVersion = "2.10.1"
 
 $appName = "CodexManager"
 if (Test-Path $tauriConfig) {
@@ -68,15 +70,32 @@ function Remove-Dir {
   }
 }
 
-function Run-Cargo {
-  param([string]$CommandLine, [scriptblock]$Action)
+function Invoke-TauriBuild {
+  param(
+    [switch]$NoBundle,
+    [string]$Bundle
+  )
+
+  if (-not $DryRun -and -not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    throw "pnpm not found in PATH"
+  }
+
+  $pnpmArgs = @("dlx", "@tauri-apps/cli@$tauriCliVersion", "build")
+  if ($NoBundle) {
+    $pnpmArgs += "--no-bundle"
+  } else {
+    $pnpmArgs += @("--bundles", $Bundle)
+  }
+
+  $display = "pnpm $($pnpmArgs -join ' ')"
   if ($DryRun) {
-    Write-Step "DRY RUN: $CommandLine"
+    Write-Step "DRY RUN: $display"
     return
   }
-  & $Action
+
+  & pnpm @pnpmArgs
   if ($LASTEXITCODE -ne 0) {
-    throw "command failed: $CommandLine"
+    throw "command failed: $display"
   }
 }
 
@@ -161,9 +180,6 @@ function Invoke-LocalWindowsBuild {
   if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw "cargo not found in PATH"
   }
-  if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Write-Warning "pnpm not found; tauri beforeBuildCommand may fail."
-  }
 
   Push-Location $root
   try {
@@ -176,9 +192,9 @@ function Invoke-LocalWindowsBuild {
     Push-Location $tauriDir
     try {
       if ($NoBundle) {
-        Run-Cargo "cargo tauri build --no-bundle" { cargo tauri build --no-bundle }
+        Invoke-TauriBuild -NoBundle
       } else {
-        Run-Cargo "cargo tauri build --bundles $Bundle" { cargo tauri build --bundles $Bundle }
+        Invoke-TauriBuild -Bundle $Bundle
       }
     } finally {
       Pop-Location

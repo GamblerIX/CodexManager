@@ -45,6 +45,222 @@ fn openai_chat_completions_are_adapted_to_responses() {
 }
 
 #[test]
+fn openai_chat_completions_preserve_multimodal_user_content() {
+    let body = serde_json::json!({
+        "model": "gpt-5.3-codex",
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "请描述这张图片"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://example.com/cat.png"
+                    }
+                }
+            ]
+        }]
+    });
+    let adapted = adapt_request_for_protocol(
+        PROTOCOL_OPENAI_COMPAT,
+        "/v1/chat/completions",
+        serde_json::to_vec(&body).expect("serialize body"),
+    )
+    .expect("adapt request");
+    let value: serde_json::Value =
+        serde_json::from_slice(&adapted.body).expect("parse adapted body");
+
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("content"))
+            .and_then(|content| content.get(0))
+            .and_then(|part| part.get("type"))
+            .and_then(serde_json::Value::as_str),
+        Some("input_text")
+    );
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("content"))
+            .and_then(|content| content.get(0))
+            .and_then(|part| part.get("text"))
+            .and_then(serde_json::Value::as_str),
+        Some("请描述这张图片")
+    );
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("content"))
+            .and_then(|content| content.get(1))
+            .and_then(|part| part.get("type"))
+            .and_then(serde_json::Value::as_str),
+        Some("input_image")
+    );
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("content"))
+            .and_then(|content| content.get(1))
+            .and_then(|part| part.get("image_url"))
+            .and_then(serde_json::Value::as_str),
+        Some("https://example.com/cat.png")
+    );
+}
+
+#[test]
+fn openai_chat_completions_preserve_image_only_user_content() {
+    let body = serde_json::json!({
+        "model": "gpt-5.3-codex",
+        "messages": [{
+            "role": "user",
+            "content": [{
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://example.com/only-image.png"
+                }
+            }]
+        }]
+    });
+    let adapted = adapt_request_for_protocol(
+        PROTOCOL_OPENAI_COMPAT,
+        "/v1/chat/completions",
+        serde_json::to_vec(&body).expect("serialize body"),
+    )
+    .expect("adapt request");
+    let value: serde_json::Value =
+        serde_json::from_slice(&adapted.body).expect("parse adapted body");
+
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("role"))
+            .and_then(serde_json::Value::as_str),
+        Some("user")
+    );
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("content"))
+            .and_then(|content| content.get(0))
+            .and_then(|part| part.get("type"))
+            .and_then(serde_json::Value::as_str),
+        Some("input_image")
+    );
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("content"))
+            .and_then(|content| content.get(0))
+            .and_then(|part| part.get("image_url"))
+            .and_then(serde_json::Value::as_str),
+        Some("https://example.com/only-image.png")
+    );
+}
+
+#[test]
+fn openai_chat_completions_preserve_array_system_and_developer_messages_as_instructions() {
+    let body = serde_json::json!({
+        "model": "gpt-5.3-codex",
+        "messages": [
+            {
+                "role": "system",
+                "content": [{
+                    "type": "text",
+                    "text": "遵循系统约束"
+                }]
+            },
+            {
+                "role": "developer",
+                "content": [{
+                    "type": "text",
+                    "text": "保留开发者提示"
+                }]
+            },
+            {
+                "role": "user",
+                "content": "hi"
+            }
+        ]
+    });
+    let adapted = adapt_request_for_protocol(
+        PROTOCOL_OPENAI_COMPAT,
+        "/v1/chat/completions",
+        serde_json::to_vec(&body).expect("serialize body"),
+    )
+    .expect("adapt request");
+    let value: serde_json::Value =
+        serde_json::from_slice(&adapted.body).expect("parse adapted body");
+
+    assert_eq!(
+        value
+            .get("instructions")
+            .and_then(serde_json::Value::as_str),
+        Some("遵循系统约束\n\n保留开发者提示")
+    );
+    assert_eq!(
+        value
+            .get("input")
+            .and_then(|input| input.get(0))
+            .and_then(|item| item.get("role"))
+            .and_then(serde_json::Value::as_str),
+        Some("user")
+    );
+}
+
+#[test]
+fn openai_chat_completions_fill_missing_json_schema_fields() {
+    let body = serde_json::json!({
+        "model": "gpt-5.3-codex",
+        "messages": [{ "role": "user", "content": "hi" }],
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "list_items",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tags": {
+                            "type": "array"
+                        },
+                        "filters": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        }]
+    });
+    let adapted = adapt_request_for_protocol(
+        PROTOCOL_OPENAI_COMPAT,
+        "/v1/chat/completions",
+        serde_json::to_vec(&body).expect("serialize body"),
+    )
+    .expect("adapt request");
+    let value: serde_json::Value =
+        serde_json::from_slice(&adapted.body).expect("parse adapted body");
+
+    assert_eq!(
+        value["tools"][0]["parameters"]["properties"]["tags"]["items"],
+        serde_json::json!({})
+    );
+    assert_eq!(
+        value["tools"][0]["parameters"]["properties"]["filters"]["properties"],
+        serde_json::json!({})
+    );
+}
+
+#[test]
 fn openai_chat_completions_stream_uses_sse_adapter() {
     let body =
         br#"{"model":"gpt-5.3-codex","messages":[{"role":"user","content":"hi"}],"stream":true}"#

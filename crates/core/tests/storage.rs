@@ -1,5 +1,6 @@
 use codexmanager_core::storage::{
-    now_ts, Account, ApiKey, RequestLog, RequestTokenStat, Storage, Token, UsageSnapshotRecord,
+    now_ts, Account, ApiKey, Event, RequestLog, RequestTokenStat, Storage, Token,
+    UsageSnapshotRecord,
 };
 
 #[test]
@@ -143,6 +144,177 @@ fn token_upsert_keeps_refresh_schedule_columns() {
 }
 
 #[test]
+fn list_tokens_due_for_refresh_skips_banned_accounts() {
+    let storage = Storage::open_in_memory().expect("open in memory");
+    storage.init().expect("init schema");
+    let now = now_ts();
+
+    for account_id in ["acc-active-refresh", "acc-banned-refresh"] {
+        storage
+            .insert_account(&Account {
+                id: account_id.to_string(),
+                label: account_id.to_string(),
+                issuer: "https://auth.openai.com".to_string(),
+                chatgpt_account_id: None,
+                workspace_id: None,
+                group_name: None,
+                sort: 0,
+                status: "active".to_string(),
+                created_at: now,
+                updated_at: now,
+            })
+            .expect("insert account");
+        storage
+            .insert_token(&Token {
+                account_id: account_id.to_string(),
+                id_token: format!("id-{account_id}"),
+                access_token: format!("access-{account_id}"),
+                refresh_token: format!("refresh-{account_id}"),
+                api_key_access_token: None,
+                last_refresh: now,
+            })
+            .expect("insert token");
+        storage
+            .update_token_refresh_schedule(account_id, Some(now + 3600), Some(now - 60))
+            .expect("set schedule");
+    }
+
+    storage
+        .insert_event(&codexmanager_core::storage::Event {
+            account_id: Some("acc-banned-refresh".to_string()),
+            event_type: "account_status_update".to_string(),
+            message: "status=unavailable reason=account_deactivated".to_string(),
+            created_at: now + 1,
+        })
+        .expect("insert banned status event");
+
+    let due = storage
+        .list_tokens_due_for_refresh(now, 10)
+        .expect("list due tokens");
+    let account_ids = due
+        .iter()
+        .map(|token| token.account_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(account_ids, vec!["acc-active-refresh"]);
+}
+
+#[test]
+fn list_tokens_due_for_refresh_skips_refresh_token_invalid_accounts() {
+    let storage = Storage::open_in_memory().expect("open in memory");
+    storage.init().expect("init schema");
+    let now = now_ts();
+
+    for account_id in ["acc-active-refresh", "acc-refresh-invalid"] {
+        storage
+            .insert_account(&Account {
+                id: account_id.to_string(),
+                label: account_id.to_string(),
+                issuer: "https://auth.openai.com".to_string(),
+                chatgpt_account_id: None,
+                workspace_id: None,
+                group_name: None,
+                sort: 0,
+                status: "active".to_string(),
+                created_at: now,
+                updated_at: now,
+            })
+            .expect("insert account");
+        storage
+            .insert_token(&Token {
+                account_id: account_id.to_string(),
+                id_token: format!("id-{account_id}"),
+                access_token: format!("access-{account_id}"),
+                refresh_token: format!("refresh-{account_id}"),
+                api_key_access_token: None,
+                last_refresh: now,
+            })
+            .expect("insert token");
+        storage
+            .update_token_refresh_schedule(account_id, Some(now + 3600), Some(now - 60))
+            .expect("set schedule");
+    }
+
+    storage
+        .insert_event(&Event {
+            account_id: Some("acc-refresh-invalid".to_string()),
+            event_type: "account_status_update".to_string(),
+            message: "status=unavailable reason=refresh_token_invalid:revoked".to_string(),
+            created_at: now + 1,
+        })
+        .expect("insert refresh invalid status event");
+
+    let due = storage
+        .list_tokens_due_for_refresh(now, 10)
+        .expect("list due tokens");
+    let account_ids = due
+        .iter()
+        .map(|token| token.account_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(account_ids, vec!["acc-active-refresh"]);
+}
+
+#[test]
+fn list_tokens_due_for_refresh_resumes_after_latest_active_status_event() {
+    let storage = Storage::open_in_memory().expect("open in memory");
+    storage.init().expect("init schema");
+    let now = now_ts();
+
+    storage
+        .insert_account(&Account {
+            id: "acc-reactivated-refresh".to_string(),
+            label: "acc-reactivated-refresh".to_string(),
+            issuer: "https://auth.openai.com".to_string(),
+            chatgpt_account_id: None,
+            workspace_id: None,
+            group_name: None,
+            sort: 0,
+            status: "active".to_string(),
+            created_at: now,
+            updated_at: now,
+        })
+        .expect("insert account");
+    storage
+        .insert_token(&Token {
+            account_id: "acc-reactivated-refresh".to_string(),
+            id_token: "id-reactivated".to_string(),
+            access_token: "access-reactivated".to_string(),
+            refresh_token: "refresh-reactivated".to_string(),
+            api_key_access_token: None,
+            last_refresh: now,
+        })
+        .expect("insert token");
+    storage
+        .update_token_refresh_schedule("acc-reactivated-refresh", Some(now + 3600), Some(now - 60))
+        .expect("set schedule");
+
+    for event in [
+        Event {
+            account_id: Some("acc-reactivated-refresh".to_string()),
+            event_type: "account_status_update".to_string(),
+            message: "status=unavailable reason=account_deactivated".to_string(),
+            created_at: now + 1,
+        },
+        Event {
+            account_id: Some("acc-reactivated-refresh".to_string()),
+            event_type: "account_status_update".to_string(),
+            message: "status=active reason=login".to_string(),
+            created_at: now + 2,
+        },
+    ] {
+        storage.insert_event(&event).expect("insert event");
+    }
+
+    let due = storage
+        .list_tokens_due_for_refresh(now, 10)
+        .expect("list due tokens");
+    let account_ids = due
+        .iter()
+        .map(|token| token.account_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(account_ids, vec!["acc-reactivated-refresh"]);
+}
+
+#[test]
 fn storage_login_session_roundtrip() {
     let storage = Storage::open_in_memory().expect("open in memory");
     storage.init().expect("init schema");
@@ -169,6 +341,77 @@ fn storage_login_session_roundtrip() {
         .expect("session exists");
     assert_eq!(loaded.status, "pending");
     assert_eq!(loaded.workspace_id.as_deref(), Some("org_123"));
+}
+
+#[test]
+fn storage_account_metadata_roundtrip_and_delete_when_empty() {
+    let storage = Storage::open_in_memory().expect("open in memory");
+    storage.init().expect("init schema");
+    let now = now_ts();
+    storage
+        .insert_account(&Account {
+            id: "acc-meta-1".to_string(),
+            label: "meta".to_string(),
+            issuer: "https://auth.openai.com".to_string(),
+            chatgpt_account_id: None,
+            workspace_id: None,
+            group_name: Some("TEAM".to_string()),
+            sort: 0,
+            status: "active".to_string(),
+            created_at: now,
+            updated_at: now,
+        })
+        .expect("insert account");
+
+    storage
+        .upsert_account_metadata("acc-meta-1", Some("主力账号"), Some("team,primary"))
+        .expect("upsert metadata");
+    let metadata = storage
+        .find_account_metadata("acc-meta-1")
+        .expect("find metadata")
+        .expect("metadata exists");
+    assert_eq!(metadata.note.as_deref(), Some("主力账号"));
+    assert_eq!(metadata.tags.as_deref(), Some("team,primary"));
+
+    storage
+        .upsert_account_metadata("acc-meta-1", None, None)
+        .expect("delete metadata");
+    assert!(storage
+        .find_account_metadata("acc-meta-1")
+        .expect("find deleted metadata")
+        .is_none());
+}
+
+#[test]
+fn deleting_account_removes_account_metadata() {
+    let mut storage = Storage::open_in_memory().expect("open in memory");
+    storage.init().expect("init schema");
+    let now = now_ts();
+    storage
+        .insert_account(&Account {
+            id: "acc-meta-delete".to_string(),
+            label: "meta-delete".to_string(),
+            issuer: "https://auth.openai.com".to_string(),
+            chatgpt_account_id: None,
+            workspace_id: None,
+            group_name: Some("TEAM".to_string()),
+            sort: 0,
+            status: "active".to_string(),
+            created_at: now,
+            updated_at: now,
+        })
+        .expect("insert account");
+    storage
+        .upsert_account_metadata("acc-meta-delete", Some("note"), Some("tag"))
+        .expect("upsert metadata");
+
+    storage
+        .delete_account("acc-meta-delete")
+        .expect("delete account");
+    assert!(storage
+        .find_account_metadata("acc-meta-delete")
+        .expect("find metadata after delete")
+        .is_none());
 }
 
 #[test]

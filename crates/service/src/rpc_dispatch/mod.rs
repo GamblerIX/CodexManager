@@ -33,6 +33,15 @@ pub(super) fn string_param(req: &JsonRpcRequest, key: &str) -> Option<String> {
     str_param(req, key).map(|v| v.to_string())
 }
 
+pub(super) fn optional_string_param(req: &JsonRpcRequest, key: &str) -> Option<Option<String>> {
+    let value = req.params.as_ref()?.get(key)?;
+    match value {
+        Value::Null => Some(None),
+        Value::String(text) => Some(Some(text.to_string())),
+        _ => None,
+    }
+}
+
 pub(super) fn i64_param(req: &JsonRpcRequest, key: &str) -> Option<i64> {
     req.params
         .as_ref()

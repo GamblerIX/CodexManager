@@ -409,6 +409,58 @@ fn responses_dynamic_tools_are_mapped_to_tools_for_codex_backend() {
 }
 
 #[test]
+fn responses_dynamic_tools_fill_missing_schema_defaults() {
+    let body = json!({
+        "model": "gpt-5.3-codex",
+        "input": "hello",
+        "dynamic_tools": [
+            {
+                "name": "array_tool",
+                "input_schema": {
+                    "type": "array"
+                }
+            },
+            {
+                "name": "object_tool",
+                "input_schema": {
+                    "type": "object"
+                }
+            }
+        ]
+    });
+    let out = apply_request_overrides(
+        "/v1/responses",
+        serde_json::to_vec(&body).expect("serialize request body"),
+        None,
+        None,
+        Some("https://chatgpt.com/backend-api/codex"),
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out).expect("parse output body");
+    let tools = value
+        .get("tools")
+        .and_then(serde_json::Value::as_array)
+        .expect("tools array");
+
+    assert_eq!(tools.len(), 2);
+    assert_eq!(
+        tools[0]
+            .get("parameters")
+            .and_then(|parameters| parameters.get("items"))
+            .and_then(serde_json::Value::as_object)
+            .map(|items| items.is_empty()),
+        Some(true)
+    );
+    assert_eq!(
+        tools[1]
+            .get("parameters")
+            .and_then(|parameters| parameters.get("properties"))
+            .and_then(serde_json::Value::as_object)
+            .map(|properties| properties.is_empty()),
+        Some(true)
+    );
+}
+
+#[test]
 fn responses_retains_service_tier_for_codex_supported_fields() {
     let body = json!({
         "model": "gpt-5.3-codex",

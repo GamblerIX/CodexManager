@@ -10,10 +10,10 @@ import {
   ChevronLeft, 
   ChevronRight
 } from "lucide-react";
+import { useRuntimeCapabilities } from "@/hooks/useRuntimeCapabilities";
 import { cn } from "@/lib/utils";
 import { normalizeRoutePath } from "@/lib/utils/static-routes";
 import { Button } from "@/components/ui/button";
-import { isTauriRuntime } from "@/lib/api/transport";
 import { useAppStore } from "@/lib/store/useAppStore";
 import {
   memo,
@@ -63,9 +63,10 @@ NavItem.displayName = "NavItem";
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const runtimeCapabilities = useRuntimeCapabilities();
   const { isSidebarOpen, toggleSidebar } = useAppStore();
   const normalizedPathname = normalizeRoutePath(pathname);
-  const isDesktopStaticRuntime = isTauriRuntime();
+  const isDesktopStaticRuntime = runtimeCapabilities.supportsRootPageKeepAlive;
   const desktopNavigationFallbackTimerRef = useRef<number | null>(null);
 
   const handleNavigate = useCallback(

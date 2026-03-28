@@ -4,6 +4,7 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod accounts;
+mod account_metadata;
 mod api_keys;
 mod conversation_bindings;
 mod events;
@@ -26,6 +27,14 @@ pub struct Account {
     pub sort: i64,
     pub status: String,
     pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct AccountMetadata {
+    pub account_id: String,
+    pub note: Option<String>,
+    pub tags: Option<String>,
     pub updated_at: i64,
 }
 
@@ -367,6 +376,11 @@ impl Storage {
             "035_api_key_profiles_service_tier",
             include_str!("../../migrations/035_api_key_profiles_service_tier.sql"),
             |s| s.ensure_api_key_service_tier_column(),
+        )?;
+        self.apply_sql_or_compat_migration(
+            "036_account_metadata",
+            include_str!("../../migrations/036_account_metadata.sql"),
+            |s| s.ensure_account_metadata_table(),
         )?;
         self.ensure_request_token_stats_table()?;
         Ok(())

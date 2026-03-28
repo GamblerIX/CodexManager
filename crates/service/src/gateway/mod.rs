@@ -9,6 +9,7 @@ mod error_response;
 mod failover;
 #[path = "observability/http_bridge/mod.rs"]
 mod http_bridge;
+mod anchor_fingerprint;
 #[path = "request/incoming_headers.rs"]
 mod incoming_headers;
 #[path = "request/local_count_tokens.rs"]
@@ -28,6 +29,8 @@ mod request_entry;
 mod request_gate;
 #[path = "request/request_helpers.rs"]
 mod request_helpers;
+#[path = "request/session_affinity.rs"]
+mod session_affinity;
 #[path = "observability/request_log.rs"]
 mod request_log;
 #[path = "request/request_rewrite.rs"]

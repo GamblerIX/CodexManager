@@ -1,10 +1,12 @@
 use serde_json::Value;
 
 mod request_rewrite_chat_completions;
+mod request_rewrite_prompt_cache;
 mod request_rewrite_responses;
 mod request_rewrite_shared;
 
 use request_rewrite_chat_completions as chat_completions;
+use request_rewrite_prompt_cache as prompt_cache;
 use request_rewrite_responses as responses;
 
 type RetainFn = fn(&str, &mut serde_json::Map<String, Value>) -> Vec<String>;

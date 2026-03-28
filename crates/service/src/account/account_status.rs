@@ -1,10 +1,25 @@
 use codexmanager_core::storage::{now_ts, Event, Storage};
 
+fn latest_status_reason(storage: &Storage, account_id: &str) -> Option<String> {
+    storage
+        .latest_account_status_reasons(&[account_id.to_string()])
+        .ok()
+        .and_then(|mut reasons| reasons.remove(account_id))
+}
+
 pub(crate) fn set_account_status(storage: &Storage, account_id: &str, status: &str, reason: &str) {
-    if matches!(
+    let changed = matches!(
         storage.update_account_status_if_changed(account_id, status),
         Ok(true)
-    ) {
+    );
+    let account_exists = storage
+        .find_account_by_id(account_id)
+        .ok()
+        .flatten()
+        .is_some();
+    if account_exists
+        && (changed || latest_status_reason(storage, account_id).as_deref() != Some(reason))
+    {
         let _ = storage.insert_event(&Event {
             account_id: Some(account_id.to_string()),
             event_type: "account_status_update".to_string(),
@@ -28,16 +43,33 @@ fn should_preserve_manual_account_status(storage: &Storage, account_id: &str) ->
 
 pub(crate) fn deactivation_reason_from_message(message: &str) -> Option<&'static str> {
     let normalized = message.trim().to_ascii_lowercase();
-    if normalized.contains("account_deactivated") || normalized.contains("account deactivated") {
-        return Some("account_deactivated");
-    }
     if normalized.contains("workspace_deactivated")
+        || normalized.contains("deactivated_workspace")
         || normalized.contains("workspace deactivated")
+        || normalized.contains("workspace-deactivated")
         || normalized.contains("deactivated workspace")
     {
         return Some("workspace_deactivated");
     }
+    if normalized.contains("account_deactivated")
+        || normalized.contains("account deactivated")
+        || normalized.contains("deactivated")
+    {
+        return Some("account_deactivated");
+    }
     None
+}
+
+pub(crate) fn is_banned_status_reason(reason: &str) -> bool {
+    matches!(
+        reason.trim().to_ascii_lowercase().as_str(),
+        "account_deactivated" | "workspace_deactivated" | "deactivated_workspace"
+    )
+}
+
+pub(crate) fn should_skip_background_refresh_for_status_reason(reason: &str) -> bool {
+    let normalized = reason.trim().to_ascii_lowercase();
+    is_banned_status_reason(normalized.as_str()) || normalized.starts_with("refresh_token_invalid:")
 }
 
 pub(crate) fn mark_account_unavailable_for_deactivation_error(
@@ -53,6 +85,17 @@ pub(crate) fn mark_account_unavailable_for_deactivation_error(
     }
     set_account_status(storage, account_id, "unavailable", reason);
     true
+}
+
+pub(crate) fn mark_account_unavailable_for_auth_error(
+    storage: &Storage,
+    account_id: &str,
+    err: &str,
+) -> bool {
+    if mark_account_unavailable_for_refresh_token_error(storage, account_id, err) {
+        return true;
+    }
+    mark_account_unavailable_for_deactivation_error(storage, account_id, err)
 }
 
 pub(crate) fn mark_account_unavailable_for_refresh_token_error(

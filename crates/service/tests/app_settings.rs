@@ -54,7 +54,7 @@ fn reset_runtime_defaults() {
         "freeAccountPreferredModels": [],
         "requestCompressionEnabled": true,
         "gatewayOriginator": "codex_cli_rs",
-        "gatewayUserAgentVersion": "0.116.0",
+        "gatewayUserAgentVersion": "0.117.0",
         "gatewayResidencyRequirement": "",
         "appearancePreset": "classic",
         "lightweightModeOnCloseToTray": false,
@@ -917,7 +917,7 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             snapshot
                 .get("gatewayUserAgentVersion")
                 .and_then(|value| value.as_str()),
-            Some("0.116.0")
+            Some("0.117.0")
         );
         assert_eq!(
             snapshot
@@ -1025,7 +1025,7 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             storage
                 .get_app_setting(codexmanager_service::APP_SETTING_GATEWAY_USER_AGENT_VERSION_KEY)
                 .expect("read gateway user agent version"),
-            Some("0.116.0".to_string())
+            Some("0.117.0".to_string())
         );
         assert_eq!(
             storage

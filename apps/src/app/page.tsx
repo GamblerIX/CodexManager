@@ -15,7 +15,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDeferredDesktopActivation } from "@/hooks/useDeferredDesktopActivation";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
+import { ROOT_PAGE_DASHBOARD } from "@/lib/routes/root-page-paths";
 import { cn } from "@/lib/utils";
 import { formatCompactNumber } from "@/lib/utils/usage";
 
@@ -153,8 +155,9 @@ function StatProgressCard({
 }
 
 export default function DashboardPage() {
+  const dataEnabled = useDeferredDesktopActivation(ROOT_PAGE_DASHBOARD);
   const { stats, currentAccount, recommendations, requestLogs, isLoading, isServiceReady } =
-    useDashboardStats();
+    useDashboardStats({ enabled: dataEnabled });
   const poolPrimary = stats.poolRemain?.primary ?? 0;
   const poolSecondary = stats.poolRemain?.secondary ?? 0;
 

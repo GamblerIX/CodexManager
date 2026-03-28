@@ -27,11 +27,34 @@ impl Storage {
 
     pub fn list_tokens_due_for_refresh(&self, now_ts: i64, limit: usize) -> Result<Vec<Token>> {
         let mut stmt = self.conn.prepare(
-            "SELECT account_id, id_token, access_token, refresh_token, api_key_access_token, last_refresh
+            "WITH latest_status AS (
+                SELECT
+                    account_id,
+                    message,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY account_id
+                        ORDER BY created_at DESC, id DESC
+                    ) AS rn
+                FROM events
+                WHERE type = 'account_status_update'
+             )
+             SELECT tokens.account_id, tokens.id_token, tokens.access_token, tokens.refresh_token, tokens.api_key_access_token, tokens.last_refresh
              FROM tokens
+             LEFT JOIN latest_status
+               ON latest_status.account_id = tokens.account_id
+              AND latest_status.rn = 1
              WHERE TRIM(COALESCE(refresh_token, '')) <> ''
+               AND (
+                    latest_status.message IS NULL
+                    OR (
+                        latest_status.message NOT LIKE '% reason=account_deactivated'
+                        AND latest_status.message NOT LIKE '% reason=workspace_deactivated'
+                        AND latest_status.message NOT LIKE '% reason=deactivated_workspace'
+                        AND latest_status.message NOT LIKE '% reason=refresh_token_invalid:%'
+                    )
+               )
                AND (next_refresh_at IS NULL OR next_refresh_at <= ?1)
-             ORDER BY COALESCE(next_refresh_at, 0) ASC, account_id ASC
+             ORDER BY COALESCE(tokens.next_refresh_at, 0) ASC, tokens.account_id ASC
              LIMIT ?2",
         )?;
         let mut rows = stmt.query((now_ts, limit as i64))?;
@@ -78,6 +101,30 @@ impl Storage {
             "SELECT account_id, id_token, access_token, refresh_token, api_key_access_token, last_refresh FROM tokens",
         )?;
         let mut rows = stmt.query([])?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            out.push(map_token_row(row)?);
+        }
+        Ok(out)
+    }
+
+    pub fn list_tokens_by_account_ids(&self, account_ids: &[String]) -> Result<Vec<Token>> {
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = account_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT account_id, id_token, access_token, refresh_token, api_key_access_token, last_refresh \
+             FROM tokens WHERE account_id IN ({placeholders})"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params = rusqlite::params_from_iter(account_ids.iter());
+        let mut rows = stmt.query(params)?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
             out.push(map_token_row(row)?);

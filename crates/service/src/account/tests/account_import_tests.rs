@@ -3,7 +3,7 @@ use super::{
     ImportTokenPayload,
 };
 use crate::account_identity::build_account_storage_id;
-use codexmanager_core::storage::{now_ts, Account, Storage};
+use codexmanager_core::storage::{now_ts, Account, Event, Storage};
 use serde_json::json;
 
 const TEST_ID_TOKEN_WS_A: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzdWItMSIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsIndvcmtzcGFjZV9pZCI6IndzLWEiLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiY2dwdC0xIn19.sig";
@@ -211,6 +211,8 @@ fn import_single_item_prefers_meta_fields_for_new_account() {
             "label": "Meta Label",
             "issuer": "https://issuer.example",
             "group_name": "META-GROUP",
+            "note": "Primary account",
+            "tags": ["meta", "seed"],
             "workspace_id": "ws-manual",
             "chatgpt_account_id": "cgpt-manual"
         }
@@ -233,4 +235,70 @@ fn import_single_item_prefers_meta_fields_for_new_account() {
         Some("cgpt-manual")
     );
     assert_eq!(accounts[0].workspace_id.as_deref(), Some("ws-manual"));
+    let metadata = storage
+        .find_account_metadata(&accounts[0].id)
+        .expect("find metadata")
+        .expect("metadata exists");
+    assert_eq!(metadata.note.as_deref(), Some("Primary account"));
+    assert_eq!(metadata.tags.as_deref(), Some("meta,seed"));
+}
+
+#[test]
+fn import_single_item_reactivates_account_for_background_refresh() {
+    let storage = Storage::open_in_memory().expect("open in memory");
+    storage.init().expect("init");
+    let now = now_ts();
+    let existing_id = build_account_storage_id("sub-1", Some("cgpt-1"), Some("ws-a"), None);
+    storage
+        .insert_account(&Account {
+            id: existing_id.clone(),
+            label: "existing".to_string(),
+            issuer: "https://auth.openai.com".to_string(),
+            chatgpt_account_id: Some("cgpt-1".to_string()),
+            workspace_id: Some("ws-a".to_string()),
+            group_name: Some("LOGIN".to_string()),
+            sort: 0,
+            status: "unavailable".to_string(),
+            created_at: now,
+            updated_at: now,
+        })
+        .expect("insert existing account");
+    storage
+        .insert_event(&Event {
+            account_id: Some(existing_id.clone()),
+            event_type: "account_status_update".to_string(),
+            message: "status=unavailable reason=account_deactivated".to_string(),
+            created_at: now - 1,
+        })
+        .expect("insert deactivated event");
+
+    let mut idx = ExistingAccountIndex::build(&storage).expect("build index");
+    let item = json!({
+        "tokens": {
+            "access_token": "access.import",
+            "id_token": TEST_ID_TOKEN_WS_A,
+            "refresh_token": "refresh.import",
+            "account_id": "legacy-import-id"
+        }
+    });
+
+    let created = import_single_item(&storage, &mut idx, &item, 1).expect("import item");
+    assert!(!created);
+
+    let due = storage
+        .list_tokens_due_for_refresh(now, 10)
+        .expect("list due tokens");
+    let due_ids = due
+        .iter()
+        .map(|token| token.account_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(due_ids, vec![existing_id.as_str()]);
+
+    let reasons = storage
+        .latest_account_status_reasons(std::slice::from_ref(&existing_id))
+        .expect("load reasons");
+    assert_eq!(
+        reasons.get(&existing_id).map(String::as_str),
+        Some("import")
+    );
 }

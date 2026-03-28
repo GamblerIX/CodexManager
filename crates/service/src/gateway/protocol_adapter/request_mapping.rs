@@ -78,9 +78,24 @@ fn convert_chat_messages_to_responses_input(
         };
         match role {
             "system" => {
-                if let Some(content) = message_obj.get("content").and_then(Value::as_str) {
-                    if !content.trim().is_empty() {
-                        instructions_parts.push(content.to_string());
+                if let Some(content) = message_obj.get("content") {
+                    match content {
+                        Value::String(text) if !text.trim().is_empty() => {
+                            instructions_parts.push(text.clone());
+                        }
+                        // 处理 OpenAI chat 数组格式: [{"type":"text","text":"..."},...]
+                        Value::Array(items) => {
+                            for item in items {
+                                if let Some(text) = item
+                                    .get("text")
+                                    .and_then(Value::as_str)
+                                    .filter(|t| !t.trim().is_empty())
+                                {
+                                    instructions_parts.push(text.to_string());
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -549,6 +564,7 @@ fn map_anthropic_tool_definition(
         .get("input_schema")
         .cloned()
         .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+    let parameters = fix_array_items_in_schema(parameters);
     let mapped_name = shorten_openai_tool_name_with_map(name, tool_name_map);
 
     let mut tool_obj = serde_json::Map::new();
@@ -600,4 +616,31 @@ fn resolve_anthropic_parallel_tool_calls(source: &serde_json::Map<String, Value>
         .and_then(|tool_choice| tool_choice.get("disable_parallel_tool_use"))
         .and_then(Value::as_bool)
         .unwrap_or(false)
+}
+
+pub(crate) fn fix_array_items_in_schema(mut value: Value) -> Value {
+    match &mut value {
+        Value::Object(obj) => {
+            let schema_type = obj
+                .get("type")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if schema_type.as_deref() == Some("array") && !obj.contains_key("items") {
+                obj.insert("items".to_string(), json!({}));
+            }
+            if schema_type.as_deref() == Some("object") && !obj.contains_key("properties") {
+                obj.insert("properties".to_string(), json!({}));
+            }
+            for (_, v) in obj.iter_mut() {
+                *v = fix_array_items_in_schema(v.clone());
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                *v = fix_array_items_in_schema(v.clone());
+            }
+        }
+        _ => {}
+    }
+    value
 }

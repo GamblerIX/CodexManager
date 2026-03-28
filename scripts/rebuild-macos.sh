@@ -6,6 +6,7 @@ NO_BUNDLE=false
 CLEAN_DIST=false
 DRY_RUN=false
 TARGET=""
+TAURI_CLI_VERSION="2.10.1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -74,10 +75,35 @@ run_cmd() {
   "$@"
 }
 
+run_tauri_build() {
+  local display
+  local -a args=(dlx "@tauri-apps/cli@${TAURI_CLI_VERSION}" build)
+
+  if [[ "$NO_BUNDLE" == "true" ]]; then
+    args+=(--no-bundle)
+  else
+    args+=(--bundles "$BUNDLES")
+  fi
+
+  if [[ -n "$TARGET" ]]; then
+    args+=(--target "$TARGET")
+  fi
+
+  display="pnpm ${args[*]}"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    step "DRY RUN: $display"
+    return
+  fi
+
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "pnpm not found in PATH" >&2
+    exit 1
+  fi
+
+  pnpm "${args[@]}"
+}
+
 command -v cargo >/dev/null 2>&1 || { echo "cargo not found in PATH" >&2; exit 1; }
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "warning: pnpm not found; tauri beforeBuildCommand may fail." >&2
-fi
 
 remove_dir "$ROOT_TARGET"
 remove_dir "$TAURI_TARGET"
@@ -86,15 +112,7 @@ if [[ "$CLEAN_DIST" == "true" ]]; then
 fi
 
 pushd "$TAURI_DIR" >/dev/null
-target_args=()
-if [[ -n "$TARGET" ]]; then
-  target_args=(--target "$TARGET")
-fi
-if [[ "$NO_BUNDLE" == "true" ]]; then
-  run_cmd "cargo tauri build --no-bundle ${target_args[*]}" cargo tauri build --no-bundle "${target_args[@]}"
-else
-  run_cmd "cargo tauri build --bundles $BUNDLES ${target_args[*]}" cargo tauri build --bundles "$BUNDLES" "${target_args[@]}"
-fi
+run_tauri_build
 popd >/dev/null
 
 step "done"

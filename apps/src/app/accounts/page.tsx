@@ -64,7 +64,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useDeferredDesktopActivation } from "@/hooks/useDeferredDesktopActivation";
 import { useAccounts } from "@/hooks/useAccounts";
+import { ROOT_PAGE_ACCOUNTS } from "@/lib/routes/root-page-paths";
 import { cn } from "@/lib/utils";
 import { buildStaticRouteUrl } from "@/lib/utils/static-routes";
 import {
@@ -98,6 +100,36 @@ function formatStatusFilterLabel(value: string) {
     case "all":
     default:
       return "全部";
+  }
+}
+
+function formatAccountPlanLabel(account: Account): string | null {
+  const rawValue = String(account.planType || account.planTypeRaw || "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  switch (rawValue.toLowerCase()) {
+    case "free":
+      return "Free";
+    case "go":
+      return "Go";
+    case "plus":
+      return "Plus";
+    case "pro":
+      return "Pro";
+    case "team":
+      return "Team";
+    case "business":
+      return "Business";
+    case "enterprise":
+      return "Enterprise";
+    case "edu":
+      return "Edu";
+    case "unknown":
+      return account.planTypeRaw || "Unknown";
+    default:
+      return account.planTypeRaw || rawValue;
   }
 }
 
@@ -166,6 +198,7 @@ function getAccountStatusAction(account: Account): {
 
 export default function AccountsPage() {
   const router = useRouter();
+  const dataEnabled = useDeferredDesktopActivation(ROOT_PAGE_ACCOUNTS);
   const {
     accounts,
     groups,
@@ -190,7 +223,7 @@ export default function AccountsPage() {
     isUpdatingSortAccountId,
     toggleAccountStatus,
     isUpdatingStatusAccountId,
-  } = useAccounts();
+  } = useAccounts({ enabled: dataEnabled });
 
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -664,6 +697,30 @@ export default function AccountsPage() {
                               </Badge>
                             ) : null}
                           </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1 overflow-hidden">
+                            {formatAccountPlanLabel(account) ? (
+                              <Badge
+                                variant="secondary"
+                                className="h-4 shrink-0 bg-blue-500/10 px-1.5 text-[9px] text-blue-700 dark:text-blue-300"
+                              >
+                                {formatAccountPlanLabel(account)}
+                              </Badge>
+                            ) : null}
+                            {account.tags.slice(0, 2).map((tag) => (
+                              <Badge
+                                key={`${account.id}-${tag}`}
+                                variant="secondary"
+                                className="h-4 shrink-0 bg-emerald-500/10 px-1.5 text-[9px] text-emerald-700 dark:text-emerald-300"
+                              >
+                                #{tag}
+                              </Badge>
+                            ))}
+                          </div>
+                          {account.note ? (
+                            <span className="mt-1 truncate text-[10px] text-muted-foreground">
+                              {account.note}
+                            </span>
+                          ) : null}
                           <span className="truncate font-mono text-[10px] uppercase text-muted-foreground opacity-60">
                             {account.id.slice(0, 16)}...
                           </span>

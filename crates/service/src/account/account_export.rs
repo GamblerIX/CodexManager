@@ -50,6 +50,8 @@ struct ExportTokensPayload {
 struct ExportMetaPayload {
     label: String,
     issuer: String,
+    note: Option<String>,
+    tags: Option<String>,
     group_name: Option<String>,
     status: String,
     workspace_id: Option<String>,
@@ -75,6 +77,12 @@ pub(crate) fn export_accounts_to_directory(
 
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
     let accounts = storage.list_accounts().map_err(|err| err.to_string())?;
+    let metadata = storage
+        .list_account_metadata()
+        .map_err(|err| err.to_string())?
+        .into_iter()
+        .map(|item| (item.account_id.clone(), item))
+        .collect::<HashMap<_, _>>();
     let total_accounts = accounts.len();
     let mut exported = 0usize;
     let mut skipped_missing_token = 0usize;
@@ -92,7 +100,7 @@ pub(crate) fn export_accounts_to_directory(
 
         let file_path =
             build_account_export_file_path(&output_path, &account, &mut file_name_counter);
-        let json = build_account_export_json(&account, &token)?;
+        let json = build_account_export_json(&account, &token, metadata.get(&account.id))?;
         std::fs::write(&file_path, json)
             .map_err(|err| format!("write export file failed ({}): {err}", file_path.display()))?;
 
@@ -112,6 +120,12 @@ pub(crate) fn export_accounts_to_directory(
 pub(crate) fn export_accounts_data() -> Result<AccountExportDataResult, String> {
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
     let accounts = storage.list_accounts().map_err(|err| err.to_string())?;
+    let metadata = storage
+        .list_account_metadata()
+        .map_err(|err| err.to_string())?
+        .into_iter()
+        .map(|item| (item.account_id.clone(), item))
+        .collect::<HashMap<_, _>>();
     let total_accounts = accounts.len();
     let mut exported = 0usize;
     let mut skipped_missing_token = 0usize;
@@ -134,7 +148,7 @@ pub(crate) fn export_accounts_data() -> Result<AccountExportDataResult, String> 
             .and_then(|value| value.to_str())
             .map(str::to_string)
             .ok_or_else(|| "build export file name failed".to_string())?;
-        let json = build_account_export_json(&account, &token)?;
+        let json = build_account_export_json(&account, &token, metadata.get(&account.id))?;
         let content =
             String::from_utf8(json).map_err(|err| format!("encode export utf8 failed: {err}"))?;
         files.push(ExportAccountFile { file_name, content });
@@ -178,7 +192,11 @@ fn build_account_export_file_path(
     output_dir.join(format!("{file_stem}.json"))
 }
 
-fn build_account_export_json(account: &Account, token: &Token) -> Result<Vec<u8>, String> {
+fn build_account_export_json(
+    account: &Account,
+    token: &Token,
+    metadata: Option<&codexmanager_core::storage::AccountMetadata>,
+) -> Result<Vec<u8>, String> {
     let payload = ExportAccountPayload {
         tokens: ExportTokensPayload {
             access_token: token.access_token.clone(),
@@ -189,6 +207,8 @@ fn build_account_export_json(account: &Account, token: &Token) -> Result<Vec<u8>
         meta: ExportMetaPayload {
             label: account.label.clone(),
             issuer: account.issuer.clone(),
+            note: metadata.and_then(|value| value.note.clone()),
+            tags: metadata.and_then(|value| value.tags.clone()),
             group_name: account.group_name.clone(),
             status: account.status.clone(),
             workspace_id: account.workspace_id.clone(),

@@ -1,7 +1,7 @@
 use codexmanager_core::auth::{
     extract_chatgpt_account_id, extract_workspace_id, parse_id_token_claims, DEFAULT_ISSUER,
 };
-use codexmanager_core::storage::{now_ts, Account, Storage, Token};
+use codexmanager_core::storage::{now_ts, Account, Event, Storage, Token};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -48,6 +48,8 @@ struct ImportAccountMeta {
     label: Option<String>,
     issuer: Option<String>,
     group_name: Option<String>,
+    note: Option<String>,
+    tags: Option<String>,
     workspace_id: Option<String>,
     chatgpt_account_id: Option<String>,
 }
@@ -108,15 +110,21 @@ pub(crate) fn import_account_auth_json(
     let batch_size = import_batch_size();
 
     for content in contents {
-        let items = parse_items_from_content(&content)?;
-        import_items_in_batches(
-            &storage,
-            &mut index,
-            &mut result,
-            &mut progress,
-            items,
-            batch_size,
-        );
+        match parse_items_from_content(&content) {
+            Ok(items) => {
+                import_items_in_batches(
+                    &storage,
+                    &mut index,
+                    &mut result,
+                    &mut progress,
+                    items,
+                    batch_size,
+                );
+            }
+            Err(err) => {
+                record_import_error(&mut result, &mut progress, err);
+            }
+        }
     }
 
     progress.finish();
@@ -170,6 +178,22 @@ fn import_items_in_batches(
             }
         }
         progress.finish_batch();
+    }
+}
+
+fn record_import_error(
+    result: &mut AccountImportResult,
+    progress: &mut AccountImportProgress,
+    message: String,
+) {
+    result.total += 1;
+    result.failed += 1;
+    progress.on_item_failure();
+    if result.errors.len() < MAX_ERROR_ITEMS {
+        result.errors.push(AccountImportError {
+            index: result.total,
+            message,
+        });
     }
 }
 
@@ -373,6 +397,8 @@ fn import_single_item(
         .group_name
         .clone()
         .filter(|value| !value.trim().is_empty());
+    let note = meta.note.clone().filter(|value| !value.trim().is_empty());
+    let tags = meta.tags.clone().filter(|value| !value.trim().is_empty());
 
     let now = now_ts();
     let (account_id, account, created) =
@@ -430,6 +456,28 @@ fn import_single_item(
     storage
         .insert_account(&account)
         .map_err(|e| e.to_string())?;
+    let existing_metadata = storage
+        .find_account_metadata(&account_id)
+        .map_err(|e| e.to_string())?;
+    let merged_note = note.or_else(|| {
+        existing_metadata
+            .as_ref()
+            .and_then(|value| value.note.clone())
+    });
+    let merged_tags = tags.or_else(|| {
+        existing_metadata
+            .as_ref()
+            .and_then(|value| value.tags.clone())
+    });
+    storage
+        .upsert_account_metadata(&account_id, merged_note.as_deref(), merged_tags.as_deref())
+        .map_err(|e| e.to_string())?;
+    let _ = storage.insert_event(&Event {
+        account_id: Some(account_id.clone()),
+        event_type: "account_status_update".to_string(),
+        message: "status=active reason=import".to_string(),
+        created_at: now,
+    });
     let token = Token {
         account_id: account_id.clone(),
         id_token: payload.id_token,
@@ -578,6 +626,8 @@ fn extract_account_meta(item: &Value) -> ImportAccountMeta {
             (item, "group_name"),
             (item, "groupName"),
         ]),
+        note: optional_string_any(&[(meta, "note"), (item, "note")]),
+        tags: optional_tags_any(&[(meta, "tags"), (item, "tags")]),
         workspace_id: optional_string_any(&[
             (meta, "workspace_id"),
             (meta, "workspaceId"),
@@ -626,6 +676,45 @@ fn optional_string(value: &Value, key: &str) -> Option<String> {
 fn optional_string_any(candidates: &[(&Value, &str)]) -> Option<String> {
     for (value, key) in candidates {
         if let Some(found) = optional_string(value, key) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn optional_tags(value: &Value, key: &str) -> Option<String> {
+    let value = value.get(key)?;
+    if let Some(text) = value.as_str() {
+        let normalized = text
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect::<Vec<_>>();
+        if normalized.is_empty() {
+            None
+        } else {
+            Some(normalized.join(","))
+        }
+    } else if let Some(items) = value.as_array() {
+        let normalized = items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect::<Vec<_>>();
+        if normalized.is_empty() {
+            None
+        } else {
+            Some(normalized.join(","))
+        }
+    } else {
+        None
+    }
+}
+
+fn optional_tags_any(candidates: &[(&Value, &str)]) -> Option<String> {
+    for (value, key) in candidates {
+        if let Some(found) = optional_tags(value, key) {
             return Some(found);
         }
     }

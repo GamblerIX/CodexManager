@@ -1427,7 +1427,7 @@ fn apikey_models_refresh_includes_client_version_query() {
     upstream_join.join().expect("join upstream");
     assert_eq!(
         captured.path,
-        "/backend-api/codex/models?client_version=0.116.0"
+        "/backend-api/codex/models?client_version=0.117.0"
     );
 }
 

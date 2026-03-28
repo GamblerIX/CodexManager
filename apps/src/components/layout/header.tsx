@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Settings as SettingsIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/useAppStore";
+import { useRuntimeCapabilities } from "@/hooks/useRuntimeCapabilities";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { WebPasswordModal } from "../modals/web-password-modal";
 import { serviceClient } from "@/lib/api/service-client";
 import { appClient } from "@/lib/api/app-client";
-import { isTauriRuntime } from "@/lib/api/transport";
 import {
   formatServiceError,
   isExpectedInitializeResult,
@@ -23,15 +23,11 @@ const DEFAULT_SERVICE_ADDR = "localhost:48760";
 
 export function Header() {
   const { serviceStatus, setServiceStatus, setAppSettings } = useAppStore();
+  const runtimeCapabilities = useRuntimeCapabilities();
   const pathname = usePathname();
   const [webPasswordModalOpen, setWebPasswordModalOpen] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   const [portInput, setPortInput] = useState("48760");
-
-  useEffect(() => {
-    setIsDesktop(isTauriRuntime());
-  }, []);
 
   useEffect(() => {
     const current = String(serviceStatus.addr || DEFAULT_SERVICE_ADDR);
@@ -118,7 +114,7 @@ export function Header() {
         <div className="hidden min-w-0 flex-1 lg:block" />
 
         <div className="flex shrink-0 items-center gap-4">
-          {isDesktop ? (
+          {runtimeCapabilities.supportsLocalServiceControl ? (
             <div className="flex items-center gap-2 rounded-lg border bg-card/30 px-3 py-1.5 shadow-sm">
               <span className="text-xs font-medium text-muted-foreground">监听端口</span>
               <Input

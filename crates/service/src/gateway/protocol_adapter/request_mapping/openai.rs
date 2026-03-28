@@ -143,6 +143,7 @@ fn map_dynamic_tool_to_responses_tool(
         .or_else(|| tool_obj.get("parameters"))
         .cloned()
         .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+    let parameters = super::fix_array_items_in_schema(parameters);
 
     let mut mapped = serde_json::Map::new();
     mapped.insert("type".to_string(), Value::String("function".to_string()));
@@ -215,39 +216,6 @@ fn normalize_openai_role_for_responses(role: &str) -> Option<&'static str> {
     }
 }
 
-fn extract_openai_message_content_text(content: &Value) -> String {
-    match content {
-        Value::String(text) => text.clone(),
-        Value::Array(items) => {
-            let mut out = String::new();
-            for item in items {
-                if let Some(text) = item.as_str() {
-                    out.push_str(text);
-                    continue;
-                }
-                let Some(item_obj) = item.as_object() else {
-                    continue;
-                };
-                let item_type = item_obj
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                match item_type {
-                    "text" | "input_text" | "output_text" => {
-                        if let Some(text) = item_obj.get("text").and_then(Value::as_str) {
-                            out.push_str(text);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            out
-        }
-        Value::Null => String::new(),
-        other => serde_json::to_string(other).unwrap_or_default(),
-    }
-}
-
 fn normalize_openai_chat_messages_for_responses(messages: &[Value]) -> Vec<Value> {
     let mut normalized = Vec::new();
     for message in messages {
@@ -281,9 +249,13 @@ fn normalize_openai_chat_messages_for_responses(messages: &[Value]) -> Vec<Value
         }
 
         if let Some(content) = message_obj.get("content") {
-            let content_text = extract_openai_message_content_text(content);
-            if !content_text.trim().is_empty() {
-                out.insert("content".to_string(), Value::String(content_text));
+            match content {
+                Value::Null => {}
+                Value::String(text) if text.trim().is_empty() => {}
+                Value::Array(items) if items.is_empty() => {}
+                _ => {
+                    out.insert("content".to_string(), content.clone());
+                }
             }
         }
 
@@ -374,7 +346,10 @@ fn map_openai_chat_tools_to_responses(
                 mapped.insert("description".to_string(), description.clone());
             }
             if let Some(parameters) = function.get("parameters") {
-                mapped.insert("parameters".to_string(), parameters.clone());
+                mapped.insert(
+                    "parameters".to_string(),
+                    super::fix_array_items_in_schema(parameters.clone()),
+                );
             }
             if let Some(strict) = function.get("strict") {
                 mapped.insert("strict".to_string(), strict.clone());

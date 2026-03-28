@@ -243,8 +243,8 @@ fn reload_from_env_defaults_user_agent_version_to_0_116_0() {
 
     reload_from_env();
 
-    assert_eq!(current_codex_user_agent_version(), "0.116.0");
-    assert!(current_codex_user_agent().contains("codex_cli_rs/0.116.0"));
+    assert_eq!(current_codex_user_agent_version(), "0.117.0");
+    assert!(current_codex_user_agent().contains("codex_cli_rs/0.117.0"));
 }
 
 #[test]

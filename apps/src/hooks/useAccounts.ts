@@ -34,26 +34,32 @@ function formatUsageRefreshErrorMessage(error: unknown): string {
   return message;
 }
 
-export function useAccounts() {
+export function useAccounts(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   const serviceStatus = useAppStore((state) => state.serviceStatus);
+  const enabled = options.enabled ?? true;
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", "list"],
     queryFn: () => accountClient.list(),
+    enabled,
+    placeholderData: (previousData) => previousData,
     retry: 1,
   });
 
   const usagesQuery = useQuery({
     queryKey: ["usage", "list"],
     queryFn: () => accountClient.listUsage(),
+    enabled,
+    placeholderData: (previousData) => previousData,
     retry: 1,
   });
 
   const manualPreferredAccountQuery = useQuery({
     queryKey: ["gateway", "manual-account", serviceStatus.addr || null],
     queryFn: () => serviceClient.getManualPreferredAccountId(),
-    enabled: serviceStatus.connected,
+    enabled: enabled && serviceStatus.connected,
+    placeholderData: (previousData) => previousData,
     retry: 1,
   });
 
@@ -286,7 +292,10 @@ export function useAccounts() {
     accounts,
     groups,
     total: accountsQuery.data?.total || accounts.length,
-    isLoading: accountsQuery.isLoading || usagesQuery.isLoading,
+    isLoading:
+      enabled &&
+      (accountsQuery.data === undefined || usagesQuery.data === undefined) &&
+      (accountsQuery.isLoading || usagesQuery.isLoading),
     manualPreferredAccountId: manualPreferredAccountQuery.data || "",
     refreshAccount: (accountId: string) => refreshAccountMutation.mutate(accountId),
     refreshAllAccounts: () => {
