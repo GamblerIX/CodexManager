@@ -60,7 +60,10 @@ pub(super) fn current_app_settings_value(
     let theme = current_ui_theme();
     let appearance_preset = current_ui_appearance_preset();
     let service_addr = current_saved_service_addr();
-    let service_listen_mode = current_service_bind_mode();
+    let service_listen_mode = crate::saved_service_bind_mode();
+    let service_listen_mode_effective = current_service_bind_mode();
+    let service_listen_mode_restart_required = crate::configured_listener_bind_addr(&service_addr)
+        != crate::current_effective_listener_bind_addr(&service_addr);
     let route_strategy = crate::gateway::current_route_strategy().to_string();
     let free_account_max_model = current_gateway_free_account_max_model();
     let free_account_preferred_models = current_gateway_free_account_preferred_models();
@@ -112,6 +115,8 @@ pub(super) fn current_app_settings_value(
         "appearancePreset": appearance_preset,
         "serviceAddr": service_addr,
         "serviceListenMode": service_listen_mode,
+        "serviceListenModeEffective": service_listen_mode_effective,
+        "serviceListenModeRestartRequired": service_listen_mode_restart_required,
         "serviceListenModeOptions": [
             SERVICE_BIND_MODE_LOOPBACK,
             SERVICE_BIND_MODE_ALL_INTERFACES

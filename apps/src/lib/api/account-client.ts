@@ -7,6 +7,7 @@ import {
   normalizeLoginStartResult,
   normalizeModelOptions,
   normalizeUsageAggregateSummary,
+  normalizeUsageRefreshSummary,
   normalizeUsageList,
   normalizeUsageSnapshot,
 } from "./normalize";
@@ -21,6 +22,7 @@ import {
   LoginStatusResult,
   LoginStartResult,
   ModelOption,
+  UsageRefreshSummary,
   UsageAggregateSummary,
 } from "../../types";
 
@@ -288,11 +290,21 @@ export const accountClient = {
     const result = await invoke<unknown>("service_usage_list", withAddr());
     return normalizeUsageList(result);
   },
-  refreshUsage: (accountId?: string) =>
-    invoke(
+  async refreshUsage(accountId?: string): Promise<UsageRefreshSummary> {
+    const result = await invoke<unknown>(
       "service_usage_refresh",
       withAddr(accountId ? { accountId } : {})
-    ),
+    );
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+      throw new Error("账号用量刷新返回了无效结果");
+    }
+    const source = result as Record<string, unknown>;
+    const requiredFields = ["requested", "attempted", "refreshed", "failed", "skipped"];
+    if (requiredFields.some((field) => typeof source[field] !== "number")) {
+      throw new Error("账号用量刷新返回缺少统计字段");
+    }
+    return normalizeUsageRefreshSummary(result);
+  },
   async aggregateUsage(): Promise<UsageAggregateSummary> {
     const result = await invoke<unknown>("service_usage_aggregate", withAddr());
     return normalizeUsageAggregateSummary(result);

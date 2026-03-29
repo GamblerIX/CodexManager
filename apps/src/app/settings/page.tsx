@@ -7,10 +7,12 @@ import { toast } from "sonner";
 import { useDeferredDesktopActivation } from "@/hooks/useDeferredDesktopActivation";
 import { useRuntimeCapabilities } from "@/hooks/useRuntimeCapabilities";
 import { appClient } from "@/lib/api/app-client";
+import { serviceClient } from "@/lib/api/service-client";
 import { getAppErrorMessage } from "@/lib/api/transport";
 import { ROOT_PAGE_SETTINGS } from "@/lib/routes/root-page-paths";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { createSerializedTaskQueue } from "@/lib/utils/serialized-task-queue";
+import { isExpectedInitializeResult } from "@/lib/utils/service";
 import {
   completePreferredModelSave,
   createPreferredModelSaveState,
@@ -68,6 +70,7 @@ import {
   Variable,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { readServiceListenState } from "./service-listen-state";
 
 const ENV_DESCRIPTION_MAP: Record<string, string> = {
   CODEXMANAGER_UPSTREAM_TOTAL_TIMEOUT_MS:
@@ -196,12 +199,6 @@ function parseIntegerInput(value: string, minimum = 0): number | null {
   return rounded;
 }
 
-function inferServiceBindPreview(addr: string, mode: string): string {
-  const normalizedAddr = String(addr || "").trim() || "localhost:48760";
-  const [, port = "48760"] = normalizedAddr.split(":");
-  return mode === "all_interfaces" ? `0.0.0.0:${port}` : `localhost:${port}`;
-}
-
 type UpdateCheckSummary = {
   repo: string;
   mode: string;
@@ -317,7 +314,7 @@ function buildReleaseUrl(summary: UpdateCheckSummary | null): string {
 }
 
 export default function SettingsPage() {
-  const { setAppSettings: setStoreSettings } = useAppStore();
+  const { setAppSettings: setStoreSettings, setServiceStatus } = useAppStore();
   const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const runtimeCapabilities = useRuntimeCapabilities();
@@ -387,6 +384,31 @@ export default function SettingsPage() {
     },
     onError: (error: unknown) => {
       toast.error(`更新失败: ${getAppErrorMessage(error)}`);
+    },
+  });
+
+  const restartServiceForListenMode = useMutation({
+    mutationFn: async () => {
+      const addr = snapshot?.serviceAddr || "localhost:48760";
+      await serviceClient.start(addr);
+      const init = await serviceClient.initialize(addr);
+      if (!isExpectedInitializeResult(init)) {
+        throw new Error("Port is in use or unexpected service responded (missing server_name)");
+      }
+      return { init, settings: await appClient.getSettings(), addr };
+    },
+    onSuccess: async ({ init, settings, addr }) => {
+      syncSettingsSnapshot(settings);
+      setServiceStatus({ connected: true, version: init.version, addr });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["startup-snapshot"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["usage"] }),
+      ]);
+      toast.success("服务已按新的监听地址重启");
+    },
+    onError: (error: unknown) => {
+      toast.error(`重启服务失败: ${getAppErrorMessage(error)}`);
     },
   });
 
@@ -572,6 +594,14 @@ export default function SettingsPage() {
       : applyPreparedUpdate.isPending
         ? "正在替换..."
         : updateActionLabel;
+
+  const listenState = snapshot
+    ? readServiceListenState(snapshot)
+    : {
+        savedBindAddr: "localhost:48760",
+        effectiveBindAddr: "localhost:48760",
+        restartRequired: false,
+      };
 
   const handleUpdateAction = () => {
     if (preparedUpdate) {
@@ -1103,15 +1133,40 @@ export default function SettingsPage() {
                   <code className="text-xs text-primary">{snapshot.serviceAddr}</code>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">实际监听地址</span>
-                  <code className="text-xs text-primary">
-                    {inferServiceBindPreview(
-                      snapshot.serviceAddr,
-                      snapshot.serviceListenMode || "loopback",
-                    )}
-                  </code>
+                  <span className="text-muted-foreground">已保存监听地址</span>
+                  <code className="text-xs text-primary">{listenState.savedBindAddr}</code>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">当前生效监听地址</span>
+                  <code className="text-xs text-primary">{listenState.effectiveBindAddr}</code>
                 </div>
               </div>
+
+              {isDesktopRuntime && runtimeCapabilities.supportsLocalServiceControl && listenState.restartRequired ? (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <p className="font-medium text-amber-700 dark:text-amber-300">监听地址变更已保存</p>
+                      <p className="text-xs text-muted-foreground">
+                        当前生效：<code>{listenState.effectiveBindAddr}</code>，重启后切换为 <code>{listenState.savedBindAddr}</code>
+                      </p>
+                    </div>
+                    <Button
+                      className="gap-2"
+                      onClick={() => restartServiceForListenMode.mutate()}
+                      disabled={restartServiceForListenMode.isPending}
+                    >
+                      <RefreshCw
+                        className={cn(
+                          "h-4 w-4",
+                          restartServiceForListenMode.isPending && "animate-spin"
+                        )}
+                      />
+                      {restartServiceForListenMode.isPending ? "正在重启..." : "重启生效"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               <p className="text-[10px] text-muted-foreground">
                 切换到 <code>0.0.0.0</code> 后，局域网设备可通过当前机器 IP 访问；

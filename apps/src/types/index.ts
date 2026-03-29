@@ -62,6 +62,14 @@ export interface UsageAggregateSummary {
   secondaryRemainPercent: number | null;
 }
 
+export interface UsageRefreshSummary {
+  requested: number;
+  attempted: number;
+  refreshed: number;
+  failed: number;
+  skipped: number;
+}
+
 export interface ApiKey {
   id: string;
   name: string;
@@ -225,6 +233,8 @@ export interface AppSettings {
   webAccessPasswordConfigured: boolean;
   serviceAddr: string;
   serviceListenMode: string;
+  serviceListenModeEffective: string;
+  serviceListenModeRestartRequired: boolean;
   serviceListenModeOptions: string[];
   routeStrategy: string;
   routeStrategyOptions: string[];

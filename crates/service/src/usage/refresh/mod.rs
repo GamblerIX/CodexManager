@@ -1,4 +1,5 @@
 use codexmanager_core::auth::{extract_token_exp, DEFAULT_CLIENT_ID, DEFAULT_ISSUER};
+use codexmanager_core::rpc::types::UsageRefreshSummaryResult;
 use codexmanager_core::storage::{now_ts, Account, Storage, Token};
 use codexmanager_core::usage::parse_usage_snapshot;
 use crossbeam_channel::unbounded;
@@ -233,7 +234,9 @@ pub(crate) fn refresh_tokens_before_expiry_for_all_accounts() -> Result<(), Stri
     Ok(())
 }
 
-pub(crate) fn refresh_usage_for_account(account_id: &str) -> Result<(), String> {
+pub(crate) fn refresh_usage_for_account(
+    account_id: &str,
+) -> Result<UsageRefreshSummaryResult, String> {
     // 刷新单个账号用量
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
     let token = match storage
@@ -241,7 +244,13 @@ pub(crate) fn refresh_usage_for_account(account_id: &str) -> Result<(), String> 
         .map_err(|e| e.to_string())?
     {
         Some(token) => token,
-        None => return Ok(()),
+        None => {
+            return Ok(UsageRefreshSummaryResult {
+                requested: 1,
+                skipped: 1,
+                ..UsageRefreshSummaryResult::default()
+            });
+        }
     };
 
     let account = storage
@@ -271,7 +280,12 @@ pub(crate) fn refresh_usage_for_account(account_id: &str) -> Result<(), String> 
         }
     }
     record_usage_refresh_metrics(true, started_at);
-    Ok(())
+    Ok(UsageRefreshSummaryResult {
+        requested: 1,
+        attempted: 1,
+        refreshed: 1,
+        ..UsageRefreshSummaryResult::default()
+    })
 }
 
 fn record_usage_refresh_metrics(success: bool, started_at: Instant) {

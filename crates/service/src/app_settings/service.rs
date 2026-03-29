@@ -69,18 +69,25 @@ fn current_env_service_bind_mode() -> Option<String> {
         .unwrap_or(normalized.as_str());
     let mode = match host {
         "0.0.0.0" | "::" | "[::]" => SERVICE_BIND_MODE_ALL_INTERFACES,
-        _ => SERVICE_BIND_MODE_LOOPBACK,
+        "localhost" | "127.0.0.1" | "::1" | "[::1]" => SERVICE_BIND_MODE_LOOPBACK,
+        _ => SERVICE_BIND_MODE_ALL_INTERFACES,
     };
     Some(mode.to_string())
 }
 
-pub fn current_service_bind_mode() -> String {
-    current_env_service_bind_mode()
-        .or_else(|| {
-            get_persisted_app_setting(SERVICE_BIND_MODE_SETTING_KEY)
-                .map(|value| normalize_service_bind_mode(Some(&value)).to_string())
-        })
+fn current_env_listener_bind_addr() -> Option<String> {
+    let raw = std::env::var("CODEXMANAGER_SERVICE_ADDR").ok()?;
+    normalize_saved_service_addr(Some(&raw)).ok()
+}
+
+pub fn saved_service_bind_mode() -> String {
+    get_persisted_app_setting(SERVICE_BIND_MODE_SETTING_KEY)
+        .map(|value| normalize_service_bind_mode(Some(&value)).to_string())
         .unwrap_or_else(|| SERVICE_BIND_MODE_LOOPBACK.to_string())
+}
+
+pub fn current_service_bind_mode() -> String {
+    current_env_service_bind_mode().unwrap_or_else(saved_service_bind_mode)
 }
 
 pub fn set_service_bind_mode(mode: &str) -> Result<String, String> {
@@ -102,15 +109,23 @@ pub fn default_listener_bind_addr() -> String {
 }
 
 pub fn listener_bind_addr(addr: &str) -> String {
+    listener_bind_addr_for_mode(addr, &current_service_bind_mode())
+}
+
+pub fn listener_bind_addr_for_mode(addr: &str, mode: &str) -> String {
     let trimmed = addr.trim();
     if trimmed.is_empty() {
-        return default_listener_bind_addr();
+        return if normalize_service_bind_mode(Some(mode)) == SERVICE_BIND_MODE_ALL_INTERFACES {
+            DEFAULT_BIND_ADDR.to_string()
+        } else {
+            DEFAULT_ADDR.to_string()
+        };
     }
 
     let addr = trimmed.strip_prefix("http://").unwrap_or(trimmed);
     let addr = addr.strip_prefix("https://").unwrap_or(addr);
     let addr = addr.split('/').next().unwrap_or(addr);
-    let bind_all = bind_all_interfaces_enabled();
+    let bind_all = normalize_service_bind_mode(Some(mode)) == SERVICE_BIND_MODE_ALL_INTERFACES;
 
     if !addr.contains(':') {
         return if bind_all {
@@ -139,6 +154,15 @@ pub fn listener_bind_addr(addr: &str) -> String {
     }
 
     addr.to_string()
+}
+
+pub fn configured_listener_bind_addr(addr: &str) -> String {
+    listener_bind_addr_for_mode(addr, &saved_service_bind_mode())
+}
+
+pub fn current_effective_listener_bind_addr(addr: &str) -> String {
+    current_env_listener_bind_addr()
+        .unwrap_or_else(|| listener_bind_addr_for_mode(addr, &current_service_bind_mode()))
 }
 
 pub fn current_saved_service_addr() -> String {

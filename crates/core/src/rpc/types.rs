@@ -161,6 +161,16 @@ pub struct UsageListResult {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UsageRefreshSummaryResult {
+    pub requested: u64,
+    pub attempted: u64,
+    pub refreshed: u64,
+    pub failed: u64,
+    pub skipped: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UsageAggregateSummaryResult {
     pub primary_bucket_count: i64,
     pub primary_known_count: i64,

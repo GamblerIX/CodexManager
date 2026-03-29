@@ -8,6 +8,7 @@ import { attachUsagesToAccounts } from "@/lib/api/normalize";
 import { serviceClient } from "@/lib/api/service-client";
 import { getAppErrorMessage } from "@/lib/api/transport";
 import { useAppStore } from "@/lib/store/useAppStore";
+import { summarizeUsageRefreshOutcome } from "@/app/accounts/usage-refresh-feedback";
 
 type ImportByDirectoryResult = Awaited<ReturnType<typeof accountClient.importByDirectory>>;
 type ImportByFileResult = Awaited<ReturnType<typeof accountClient.importByFile>>;
@@ -102,8 +103,12 @@ export function useAccounts(options: { enabled?: boolean } = {}) {
 
   const refreshAccountMutation = useMutation({
     mutationFn: (accountId: string) => accountClient.refreshUsage(accountId),
-    onSuccess: () => {
-      toast.success("账号用量已刷新");
+    onSuccess: (summary) => {
+      const feedback = summarizeUsageRefreshOutcome(summary);
+      if (feedback.tone === "success") toast.success(feedback.message);
+      if (feedback.tone === "info") toast.info(feedback.message);
+      if (feedback.tone === "warning") toast.warning(feedback.message);
+      if (feedback.tone === "error") toast.error(feedback.message);
     },
     onError: (error: unknown) => {
       toast.error(`刷新失败: ${formatUsageRefreshErrorMessage(error)}`);
@@ -115,8 +120,12 @@ export function useAccounts(options: { enabled?: boolean } = {}) {
 
   const refreshAllMutation = useMutation({
     mutationFn: () => accountClient.refreshUsage(),
-    onSuccess: () => {
-      toast.success("账号用量已刷新");
+    onSuccess: (summary) => {
+      const feedback = summarizeUsageRefreshOutcome(summary);
+      if (feedback.tone === "success") toast.success(feedback.message);
+      if (feedback.tone === "info") toast.info(feedback.message);
+      if (feedback.tone === "warning") toast.warning(feedback.message);
+      if (feedback.tone === "error") toast.error(feedback.message);
     },
     onError: (error: unknown) => {
       toast.error(`刷新失败: ${formatUsageRefreshErrorMessage(error)}`);

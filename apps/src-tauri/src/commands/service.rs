@@ -30,7 +30,7 @@ pub async fn service_initialize(
 pub async fn service_start(app: tauri::AppHandle, addr: String) -> Result<(), String> {
     let connect_addr = normalize_addr(&addr)?;
     apply_runtime_storage_env(&app);
-    let bind_addr = codexmanager_service::listener_bind_addr(&connect_addr);
+    let bind_addr = codexmanager_service::configured_listener_bind_addr(&connect_addr);
     tauri::async_runtime::spawn_blocking(move || {
         log::info!(
             "service_start requested connect_addr={} bind_addr={}",

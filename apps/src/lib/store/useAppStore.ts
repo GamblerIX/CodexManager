@@ -28,6 +28,8 @@ export const useAppStore = create<AppState>((set) => ({
     webAccessPasswordConfigured: false,
     serviceAddr: "localhost:48760",
     serviceListenMode: "loopback",
+    serviceListenModeEffective: "loopback",
+    serviceListenModeRestartRequired: false,
     serviceListenModeOptions: ["loopback", "all_interfaces"],
     routeStrategy: "ordered",
     routeStrategyOptions: ["ordered", "balanced"],

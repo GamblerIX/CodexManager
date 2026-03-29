@@ -1,4 +1,5 @@
 use crate::account_status::should_skip_background_refresh_for_status_reason;
+use codexmanager_core::rpc::types::UsageRefreshSummaryResult;
 use codexmanager_core::storage::{Account, Storage, Token};
 use crossbeam_channel::unbounded;
 use std::collections::HashSet;
@@ -13,25 +14,31 @@ use super::{
     ENV_USAGE_POLL_CYCLE_BUDGET_SECS, USAGE_POLL_CURSOR, USAGE_REFRESH_WORKERS,
 };
 
-pub(crate) fn refresh_usage_for_all_accounts() -> Result<(), String> {
+pub(crate) fn refresh_usage_for_all_accounts() -> Result<UsageRefreshSummaryResult, String> {
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
     let accounts = storage.list_accounts().map_err(|e| e.to_string())?;
-    let tasks = build_usage_refresh_tasks(
+    let (tasks, skipped) = build_usage_refresh_tasks(
         storage.list_tokens().map_err(|e| e.to_string())?,
         &accounts,
         &load_banned_account_ids(&storage, &accounts)?,
     );
     if tasks.is_empty() {
-        return Ok(());
+        return Ok(UsageRefreshSummaryResult {
+            requested: skipped as u64,
+            skipped: skipped as u64,
+            ..UsageRefreshSummaryResult::default()
+        });
     }
-    run_usage_refresh_tasks(tasks)?;
-    Ok(())
+    let mut summary = run_usage_refresh_tasks(tasks)?;
+    summary.skipped += skipped as u64;
+    summary.requested = summary.attempted + summary.skipped;
+    Ok(summary)
 }
 
 pub(crate) fn refresh_usage_for_polling_batch() -> Result<(), String> {
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
     let accounts = storage.list_accounts().map_err(|e| e.to_string())?;
-    let all_tasks = build_usage_refresh_tasks(
+    let (all_tasks, _) = build_usage_refresh_tasks(
         storage.list_tokens().map_err(|e| e.to_string())?,
         &accounts,
         &load_banned_account_ids(&storage, &accounts)?,
@@ -51,30 +58,31 @@ pub(crate) fn refresh_usage_for_polling_batch() -> Result<(), String> {
         .map(|index| all_tasks[index].clone())
         .collect::<Vec<_>>();
     let processed = run_usage_refresh_tasks(selected_tasks)?;
+    let processed_count = processed.attempted as usize;
 
-    if processed > 0 {
+    if processed_count > 0 {
         USAGE_POLL_CURSOR.store(
-            next_usage_poll_cursor(total, start_cursor, processed),
+            next_usage_poll_cursor(total, start_cursor, processed_count),
             Ordering::Relaxed,
         );
     }
     if cycle_budget.is_some_and(|budget| cycle_started_at.elapsed() >= budget) {
         log::info!(
             "usage polling batch exceeded budget: processed={} total={} workers={} elapsed_ms={} budget_secs={}",
-            processed,
+            processed_count,
             total,
-            usage_refresh_worker_count().min(processed.max(1)),
+            usage_refresh_worker_count().min(processed_count.max(1)),
             cycle_started_at.elapsed().as_millis(),
             cycle_budget.map(|budget| budget.as_secs()).unwrap_or(0)
         );
     }
-    if processed < total {
+    if processed_count < total {
         log::info!(
             "usage polling batch truncated: processed={} total={} batch_limit={} workers={} budget_secs={}",
-            processed,
+            processed_count,
             total,
             batch_limit,
-            usage_refresh_worker_count().min(processed.max(1)),
+            usage_refresh_worker_count().min(processed_count.max(1)),
             cycle_budget.map(|budget| budget.as_secs()).unwrap_or(0)
         );
     }
@@ -92,7 +100,7 @@ fn build_usage_refresh_tasks(
     tokens: Vec<Token>,
     accounts: &[Account],
     banned_ids: &HashSet<String>,
-) -> Vec<UsageRefreshBatchTask> {
+) -> (Vec<UsageRefreshBatchTask>, usize) {
     let mut skipped_ids = accounts
         .iter()
         .filter(|account| is_account_refresh_skipped(account))
@@ -101,7 +109,7 @@ fn build_usage_refresh_tasks(
     skipped_ids.extend(banned_ids.iter().cloned());
     let workspace_map = build_workspace_map_from_accounts(accounts);
 
-    tokens
+    let tasks = tokens
         .into_iter()
         .filter(|token| !skipped_ids.contains(&token.account_id))
         .map(|token| {
@@ -112,25 +120,41 @@ fn build_usage_refresh_tasks(
                 account_id,
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    (tasks, skipped_ids.len())
 }
 
-fn run_usage_refresh_tasks(tasks: Vec<UsageRefreshBatchTask>) -> Result<usize, String> {
+fn run_usage_refresh_tasks(
+    tasks: Vec<UsageRefreshBatchTask>,
+) -> Result<UsageRefreshSummaryResult, String> {
     let total = tasks.len();
     if total == 0 {
-        return Ok(0);
+        return Ok(UsageRefreshSummaryResult::default());
     }
 
     let worker_count = usage_refresh_worker_count().min(total);
     if worker_count <= 1 {
         let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
+        let mut refreshed = 0u64;
+        let mut failed = 0u64;
         for task in tasks {
-            run_usage_refresh_task(&storage, task);
+            if run_usage_refresh_task(&storage, task) {
+                refreshed += 1;
+            } else {
+                failed += 1;
+            }
         }
-        return Ok(total);
+        return Ok(UsageRefreshSummaryResult {
+            attempted: total as u64,
+            refreshed,
+            failed,
+            ..UsageRefreshSummaryResult::default()
+        });
     }
 
     let (sender, receiver) = unbounded::<UsageRefreshBatchTask>();
+    let (result_sender, result_receiver) = unbounded::<bool>();
     for task in tasks {
         sender
             .send(task)
@@ -142,12 +166,16 @@ fn run_usage_refresh_tasks(tasks: Vec<UsageRefreshBatchTask>) -> Result<usize, S
         let mut handles = Vec::with_capacity(worker_count);
         for worker_index in 0..worker_count {
             let receiver = receiver.clone();
+            let result_sender = result_sender.clone();
             handles.push(scope.spawn(move || {
                 let storage = open_storage().ok_or_else(|| {
                     format!("usage refresh worker {worker_index} storage unavailable")
                 })?;
                 while let Ok(task) = receiver.recv() {
-                    run_usage_refresh_task(&storage, task);
+                    let success = run_usage_refresh_task(&storage, task);
+                    result_sender
+                        .send(success)
+                        .map_err(|_| "report usage refresh task result failed".to_string())?;
                 }
                 Ok::<(), String>(())
             }));
@@ -162,17 +190,37 @@ fn run_usage_refresh_tasks(tasks: Vec<UsageRefreshBatchTask>) -> Result<usize, S
         }
         Ok(())
     })?;
+    drop(result_sender);
 
-    Ok(total)
+    let mut refreshed = 0u64;
+    let mut failed = 0u64;
+    while let Ok(success) = result_receiver.recv() {
+        if success {
+            refreshed += 1;
+        } else {
+            failed += 1;
+        }
+    }
+
+    Ok(UsageRefreshSummaryResult {
+        attempted: total as u64,
+        refreshed,
+        failed,
+        ..UsageRefreshSummaryResult::default()
+    })
 }
 
-fn run_usage_refresh_task(storage: &Storage, task: UsageRefreshBatchTask) {
+fn run_usage_refresh_task(storage: &Storage, task: UsageRefreshBatchTask) -> bool {
     let started_at = Instant::now();
     match refresh_usage_for_token(storage, &task.token, task.workspace_id.as_deref(), None) {
-        Ok(_) => record_usage_refresh_metrics(true, started_at),
+        Ok(_) => {
+            record_usage_refresh_metrics(true, started_at);
+            true
+        }
         Err(err) => {
             record_usage_refresh_metrics(false, started_at);
             record_usage_refresh_failure(storage, &task.account_id, &err);
+            false
         }
     }
 }
@@ -306,7 +354,7 @@ mod tests {
 
     #[test]
     fn build_usage_refresh_tasks_skips_disabled_and_banned_accounts() {
-        let tasks = build_usage_refresh_tasks(
+        let (tasks, skipped) = build_usage_refresh_tasks(
             vec![
                 token("acc-active"),
                 token("acc-disabled"),
@@ -338,6 +386,7 @@ mod tests {
                 "acc-missing"
             ]
         );
+        assert_eq!(skipped, 2);
         assert_eq!(tasks[0].workspace_id.as_deref(), Some("ws-active"));
         assert_eq!(tasks[1].workspace_id.as_deref(), Some("ws-inactive"));
         assert_eq!(tasks[2].workspace_id.as_deref(), Some("ws-unavailable"));

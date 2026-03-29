@@ -325,6 +325,27 @@ fn rpc_account_list_supports_pagination() {
 }
 
 #[test]
+fn rpc_usage_refresh_returns_summary_counts_when_nothing_is_refreshable() {
+    let _ctx = RpcTestContext::new("rpc-usage-refresh-summary-empty");
+    let server = codexmanager_service::start_one_shot_server().expect("start server");
+
+    let req = JsonRpcRequest {
+        id: 17,
+        method: "account/usage/refresh".to_string(),
+        params: None,
+    };
+    let json = serde_json::to_string(&req).expect("serialize");
+    let v = post_rpc(&server.addr, &json);
+    let result = v.get("result").expect("result");
+
+    assert_eq!(result.get("requested").and_then(|value| value.as_u64()), Some(0));
+    assert_eq!(result.get("attempted").and_then(|value| value.as_u64()), Some(0));
+    assert_eq!(result.get("refreshed").and_then(|value| value.as_u64()), Some(0));
+    assert_eq!(result.get("failed").and_then(|value| value.as_u64()), Some(0));
+    assert_eq!(result.get("skipped").and_then(|value| value.as_u64()), Some(0));
+}
+
+#[test]
 fn rpc_app_settings_set_invalid_payload_returns_structured_error() {
     let _ctx = RpcTestContext::new("rpc-app-settings-invalid-payload");
     let server = codexmanager_service::start_one_shot_server().expect("start server");

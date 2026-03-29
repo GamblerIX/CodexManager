@@ -18,6 +18,7 @@ import {
   RequestLogListResult,
   RequestLogTodaySummary,
   StartupSnapshot,
+  UsageRefreshSummary,
   UsageAggregateSummary,
 } from "@/types";
 import {
@@ -157,6 +158,17 @@ export function normalizeUsageAggregateSummary(payload: unknown): UsageAggregate
     secondaryKnownCount: asInteger(source.secondaryKnownCount, 0, 0),
     secondaryUnknownCount: asInteger(source.secondaryUnknownCount, 0, 0),
     secondaryRemainPercent: toNullableNumber(source.secondaryRemainPercent),
+  };
+}
+
+export function normalizeUsageRefreshSummary(payload: unknown): UsageRefreshSummary {
+  const source = asObject(payload);
+  return {
+    requested: asInteger(source.requested, 0, 0),
+    attempted: asInteger(source.attempted, 0, 0),
+    refreshed: asInteger(source.refreshed, 0, 0),
+    failed: asInteger(source.failed, 0, 0),
+    skipped: asInteger(source.skipped, 0, 0),
   };
 }
 
@@ -523,6 +535,14 @@ export function normalizeAppSettings(payload: unknown): AppSettings {
     ),
     serviceAddr: asString(source.serviceAddr) || "localhost:48760",
     serviceListenMode: asString(source.serviceListenMode) || "loopback",
+    serviceListenModeEffective:
+      asString(source.serviceListenModeEffective) ||
+      asString(source.serviceListenMode) ||
+      "loopback",
+    serviceListenModeRestartRequired: asBoolean(
+      source.serviceListenModeRestartRequired,
+      false
+    ),
     serviceListenModeOptions: asArray(source.serviceListenModeOptions).map((item) =>
       asString(item)
     ),

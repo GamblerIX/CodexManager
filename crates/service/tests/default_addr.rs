@@ -107,3 +107,25 @@ fn listener_bind_addr_keeps_explicit_all_interfaces() {
         );
     });
 }
+
+#[test]
+fn configured_listener_bind_addr_uses_saved_mode_even_when_runtime_env_is_loopback() {
+    with_bind_mode(
+        Some(codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES),
+        || {
+            let previous = std::env::var("CODEXMANAGER_SERVICE_ADDR").ok();
+            std::env::set_var("CODEXMANAGER_SERVICE_ADDR", "localhost:48760");
+
+            assert_eq!(
+                codexmanager_service::configured_listener_bind_addr("localhost:48760"),
+                "0.0.0.0:48760"
+            );
+
+            if let Some(value) = previous {
+                std::env::set_var("CODEXMANAGER_SERVICE_ADDR", value);
+            } else {
+                std::env::remove_var("CODEXMANAGER_SERVICE_ADDR");
+            }
+        },
+    );
+}

@@ -273,6 +273,18 @@ fn app_settings_set_persists_snapshot_and_password_hash() {
         );
         assert_eq!(
             snapshot
+                .get("serviceListenModeEffective")
+                .and_then(|value| value.as_str()),
+            Some(codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES)
+        );
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeRestartRequired")
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+        assert_eq!(
+            snapshot
                 .get("upstreamStreamTimeoutMs")
                 .and_then(|value| value.as_u64()),
             Some(654321)
@@ -549,6 +561,116 @@ fn sync_runtime_settings_from_storage_treats_empty_preferred_models_as_empty_lis
                 )
                 .expect("read free account preferred models"),
             Some("[]".to_string())
+        );
+    });
+}
+
+#[test]
+fn app_settings_snapshot_keeps_saved_and_effective_listen_modes_separate() {
+    with_temp_db(|db_path| {
+        let storage = Storage::open(db_path).expect("open storage");
+        storage.init().expect("init storage");
+        storage
+            .set_app_setting(
+                codexmanager_service::SERVICE_BIND_MODE_SETTING_KEY,
+                codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES,
+                now_ts(),
+            )
+            .expect("set bind mode");
+        drop(storage);
+
+        let _env = override_env_vars(&[("CODEXMANAGER_SERVICE_ADDR", Some("localhost:4999"))]);
+        let snapshot = codexmanager_service::app_settings_get().expect("get settings");
+
+        assert_eq!(
+            snapshot
+                .get("serviceListenMode")
+                .and_then(|value| value.as_str()),
+            Some(codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES)
+        );
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeEffective")
+                .and_then(|value| value.as_str()),
+            Some(codexmanager_service::SERVICE_BIND_MODE_LOOPBACK)
+        );
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeRestartRequired")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+    });
+}
+
+#[test]
+fn app_settings_snapshot_treats_explicit_host_runtime_as_effective_all_interfaces() {
+    with_temp_db(|db_path| {
+        let storage = Storage::open(db_path).expect("open storage");
+        storage.init().expect("init storage");
+        storage
+            .set_app_setting(
+                codexmanager_service::APP_SETTING_SERVICE_ADDR_KEY,
+                "192.168.1.10:4999",
+                now_ts(),
+            )
+            .expect("set service addr");
+        storage
+            .set_app_setting(
+                codexmanager_service::SERVICE_BIND_MODE_SETTING_KEY,
+                codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES,
+                now_ts(),
+            )
+            .expect("set bind mode");
+        drop(storage);
+
+        let _env = override_env_vars(&[("CODEXMANAGER_SERVICE_ADDR", Some("192.168.1.10:4999"))]);
+        let snapshot = codexmanager_service::app_settings_get().expect("get settings");
+
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeEffective")
+                .and_then(|value| value.as_str()),
+            Some(codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES)
+        );
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeRestartRequired")
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+    });
+}
+
+#[test]
+fn app_settings_snapshot_does_not_require_restart_when_explicit_host_stays_unchanged() {
+    with_temp_db(|db_path| {
+        let storage = Storage::open(db_path).expect("open storage");
+        storage.init().expect("init storage");
+        storage
+            .set_app_setting(
+                codexmanager_service::APP_SETTING_SERVICE_ADDR_KEY,
+                "192.168.1.10:4999",
+                now_ts(),
+            )
+            .expect("set service addr");
+        storage
+            .set_app_setting(
+                codexmanager_service::SERVICE_BIND_MODE_SETTING_KEY,
+                codexmanager_service::SERVICE_BIND_MODE_LOOPBACK,
+                now_ts(),
+            )
+            .expect("set bind mode");
+        drop(storage);
+
+        let _env = override_env_vars(&[("CODEXMANAGER_SERVICE_ADDR", Some("192.168.1.10:4999"))]);
+        let snapshot = codexmanager_service::app_settings_get().expect("get settings");
+
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeRestartRequired")
+                .and_then(|value| value.as_bool()),
+            Some(false)
         );
     });
 }

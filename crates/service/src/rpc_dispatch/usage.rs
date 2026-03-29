@@ -24,7 +24,7 @@ pub(super) fn try_handle(req: &JsonRpcRequest) -> Option<JsonRpcResponse> {
                 Some(account_id) => usage_refresh::refresh_usage_for_account(account_id),
                 None => usage_refresh::refresh_usage_for_all_accounts(),
             };
-            super::ok_or_error(result)
+            super::value_or_error(result)
         }
         _ => return None,
     };
