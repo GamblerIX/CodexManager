@@ -1,153 +1,153 @@
-# Copilot Repo-Level Autoloop Design
+# Copilot 仓库级自主迭代安装设计
 
-Date: 2026-04-05
-Repo: `D:\Github\CodexManager\CodexManager`
-Status: Draft approved in brainstorming, pending user review
+日期：2026-04-05  
+仓库：`D:\Github\CodexManager\CodexManager`  
+状态：已完成头脑风暴阶段设计确认，等待用户审阅
 
-## Goal
+## 目标
 
-Install a repo-level GitHub Copilot workflow for this repository that enables one-session autonomous iteration in VS Code Agent Mode and Copilot CLI, using:
+为本仓库安装一套仓库级 GitHub Copilot 工作流，使其在 VS Code Agent Mode 与 Copilot CLI 中能够实现单次会话内的自主迭代，具体采用：
 
-- `superpowers` as the primary workflow backbone
-- `everything-claude-code` (ECC) as a loop-control and verification helper layer
-- `ui-ux-pro-max` as the first professional domain skill in an extensible `pro-*` layer
+- `superpowers` 作为主工作流骨架
+- `everything-claude-code`（ECC）作为循环控制与验证辅助层
+- `ui-ux-pro-max` 作为第一批专业领域技能，并纳入可扩展的 `pro-*` 技能层
 
-The system should keep iterating within one session through:
+系统应在单次会话内持续循环完成：
 
-1. design and planning
-2. implementation
-3. verification
-4. full-repository parallelized review
-5. next-round fixes
+1. 设计与计划
+2. 实施改动
+3. 执行验证
+4. 全仓并行审查
+5. 根据结果继续下一轮修复
 
-It should stop only when verification and review both indicate convergence, or when an explicit loop-safety stop condition is hit.
+只有当验证与审查都表明已经收敛，或者命中显式循环安全停止条件时，才允许结束。
 
-## Hard Constraints
+## 硬约束
 
-- Repo-level only: all new reusable assets live under `.github/`, except the root `AGENTS.md` entrypoint that GitHub Copilot expects at repository root.
-- No MCP dependency.
-- No user-profile installation requirements such as `~/.codex`, `~/.claude`, `~/.agents`, or IDE-global configuration.
-- No background daemons, observers, or session services outside the repo.
-- The main agent must not proactively narrate completion progress as a substitute for evidence.
-- Every modification round must trigger:
-  - verification
-  - full-repository review by `code-reviewer`
-  - a next-step decision based on evidence
+- 仅做仓库级安装：所有新增可复用资产均放在 `.github/` 下，只有 GitHub Copilot 预期的入口 `AGENTS.md` 保留在仓库根目录。
+- 不依赖 MCP。
+- 不要求任何用户目录级安装，例如 `~/.codex`、`~/.claude`、`~/.agents`，也不要求 IDE 全局配置。
+- 不引入仓库外的后台守护进程、观察器或会话服务。
+- 主智能体不得用“主观完成度描述”替代真实证据。
+- 每一轮修改后都必须触发：
+  - 验证
+  - `code-reviewer` 的全仓审查
+  - 基于证据的下一步决策
 
-## Official Support Boundary
+## 官方支持边界
 
-This design stays inside GitHub Copilot's documented repository customization surfaces:
+本设计严格限制在 GitHub Copilot 已文档化支持的仓库定制范围内：
 
-- Root `AGENTS.md` for repository agent instructions
-- `.github/agents/*.agent.md` for custom agents
-- `.github/skills/<skill>/SKILL.md` for agent skills and their local helper files
-- `.github/instructions/*.instructions.md` for path-specific instructions
-- `.github/hooks/*.json` for Copilot hooks
+- 根目录 `AGENTS.md`：仓库级 agent 指令入口
+- `.github/agents/*.agent.md`：自定义 agent
+- `.github/skills/<skill>/SKILL.md`：agent skills 及其本地辅助文件
+- `.github/instructions/*.instructions.md`：路径级 instructions
+- `.github/hooks/*.json`：Copilot hooks
 
-Validated against GitHub and VS Code documentation on 2026-04-05:
+已于 2026-04-05 对照 GitHub 与 VS Code 官方文档核实：
 
-- GitHub Docs: custom agents
+- GitHub Docs：自定义 agents
   - <https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-custom-agents>
   - <https://docs.github.com/en/copilot/reference/custom-agents-configuration>
-- GitHub Docs: custom instructions
+- GitHub Docs：自定义 instructions
   - <https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions>
   - <https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-reusable-instructions>
-- GitHub Docs: skills
+- GitHub Docs：skills
   - <https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-skills>
-- GitHub Docs: hooks
+- GitHub Docs：hooks
   - <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks>
   - <https://docs.github.com/en/copilot/reference/hooks-configuration>
-- VS Code Docs: customization and custom agents
+- VS Code Docs：Copilot customization 与 custom agents
   - <https://code.visualstudio.com/docs/copilot/customization/overview>
   - <https://code.visualstudio.com/docs/copilot/customization/custom-agents>
   - <https://code.visualstudio.com/docs/copilot/agents/background-agents>
 
-### Important Clarification
+### 重要澄清
 
-The repo should not rely on `.vscode/mcp.json`, `.github/mcp.json`, or any MCP-specific workflow. This design deliberately removes those dependencies.
+本仓库不应依赖 `.vscode/mcp.json`、`.github/mcp.json` 或任何 MCP 专属工作流。本设计明确移除这些依赖。
 
-Also, there is no GitHub Copilot hook named `pre-final-response`. Final-response discipline must therefore be enforced through:
+另外，GitHub Copilot 当前并不存在名为 `pre-final-response` 的 hook 事件。因此，对“最终回复前必须具备验证证据”这一约束，必须通过以下方式实现：
 
-- agent instructions
-- `agentStop` and `subagentStop` hook checks
-- review and verification state files
+- agent 指令
+- `agentStop` 与 `subagentStop` hook 检查
+- 审查与验证状态文件
 
-not through a non-existent hook phase.
+而不是依赖一个并不存在的 hook 阶段。
 
-## Target Architecture
+## 目标架构
 
-The system is split into five layers.
+整套系统分为五层。
 
-### 1. Root `AGENTS.md`
+### 1. 根目录 `AGENTS.md`
 
-Purpose:
+用途：
 
-- establish repo-wide autonomous iteration rules
-- define the execution order for agents and skills
-- prohibit fake completion claims without evidence
-- define when to escalate to loop-safety handling
+- 建立仓库级自主迭代规则
+- 定义 agents 与 skills 的执行优先级
+- 禁止无证据的“伪完成”声明
+- 定义何时升级为循环安全处理
 
-Design:
+设计要求：
 
-- keep this file concise and high-signal
-- remove large procedural detail from the current version
-- move path-specific content to `.github/instructions`
-- move reusable workflows to `.github/skills`
+- 保持简洁、高密度、常驻可读
+- 将大量过程细节从当前文件中移出
+- 路径相关规则迁入 `.github/instructions`
+- 可复用工作流迁入 `.github/skills`
 
 ### 2. `.github/instructions/`
 
-Purpose:
+用途：
 
-- hold narrow, path-specific rules only
-- keep routing precise and maintainable
+- 仅承载窄范围、路径相关的规则
+- 保持命中精确，便于维护
 
-Planned files:
+计划文件：
 
 - `.github/instructions/frontend-stack.instructions.md`
 - `.github/instructions/tauri-rpc.instructions.md`
 - `.github/instructions/rust-gateway.instructions.md`
-- optional `.github/instructions/repo-review.instructions.md` for review-output formatting rules
+- 可选的 `.github/instructions/repo-review.instructions.md`，用于约束 review 输出格式
 
-Rule:
+规则：
 
-- use precise `applyTo` scopes
-- avoid broad catch-all globs unless there is no narrower stable boundary
+- 使用精确的 `applyTo` 范围
+- 除非没有稳定边界，否则不要使用过宽的兜底 glob
 
 ### 3. `.github/skills/`
 
-Purpose:
+用途：
 
-- act as the primary workflow surface
-- contain both backbone workflow skills and optional domain-specialist skills
+- 作为主工作流层
+- 同时容纳骨架型 workflow skills 与可选的专业型 skills
 
-Naming convention:
+命名约定：
 
-- `sp-*` for superpowers-based backbone workflows
-- `ecc-*` for ECC loop and support workflows
-- `pro-*` for domain-specific specialist skills
+- `sp-*`：基于 superpowers 的骨架工作流
+- `ecc-*`：基于 ECC 的循环与辅助工作流
+- `pro-*`：领域型专业技能
 
 ### 4. `.github/agents/`
 
-Purpose:
+用途：
 
-- define the entry agent and the review/safety agents
-- keep the picker small and purposeful
+- 定义入口 agent、审查 agent 与循环安全 agent
+- 控制 picker 规模，避免角色过多
 
-Planned agents:
+计划 agent：
 
 - `codexmanager-autoloop.agent.md`
 - `code-reviewer.agent.md`
 - `loop-operator.agent.md`
 
-### 5. `.github/hooks/` plus `.github/scripts/`
+### 5. `.github/hooks/` 与 `.github/scripts/`
 
-Purpose:
+用途：
 
-- encode lightweight triggers in hooks
-- keep real orchestration in scripts
-- persist loop state and review evidence inside the repo
+- 在 hooks 中表达轻量触发逻辑
+- 在 scripts 中承载真正的编排逻辑
+- 在仓库内持久化循环状态与审查证据
 
-## Desired Repository Layout
+## 目标目录结构
 
 ```text
 AGENTS.md
@@ -205,254 +205,254 @@ AGENTS.md
       data/
 ```
 
-## One-Session Autoloop State Machine
+## 单次会话自主迭代状态机
 
-The intended loop is:
+目标循环为：
 
-1. intake
-2. design or plan selection
-3. implement
-4. verify
-5. full-repo review
-6. decide next step
-7. either iterate again or summarize
+1. 接收任务
+2. 设计或计划选择
+3. 实施改动
+4. 执行验证
+5. 全仓审查
+6. 决定下一步
+7. 要么继续下一轮，要么输出收敛总结
 
-### State Definitions
+### 状态定义
 
-#### Intake
+#### 接收任务
 
-The main agent reads:
+主智能体读取：
 
-- root `AGENTS.md`
-- matching `.github/instructions/*.instructions.md`
-- relevant `.github/skills/*/SKILL.md`
+- 根目录 `AGENTS.md`
+- 命中的 `.github/instructions/*.instructions.md`
+- 相关 `.github/skills/*/SKILL.md`
 
-Decision rules:
+决策规则：
 
-- if the request changes behavior or adds capability, start with `sp-brainstorming`
-- after design approval, use `sp-writing-plans`
-- if the task is straightforward and already explicitly specified, the backbone may skip brainstorming only if `AGENTS.md` explicitly allows that shortcut; otherwise follow the backbone strictly
+- 如果请求涉及新增能力或行为变更，则先进入 `sp-brainstorming`
+- 设计获批后进入 `sp-writing-plans`
+- 如果任务足够直接且规格已经非常明确，只有在 `AGENTS.md` 明确允许快捷路径时，骨架流程才可跳过 brainstorming；否则仍应严格遵循骨架流程
 
-#### Implement
+#### 实施改动
 
-The main agent performs minimal necessary edits, following:
+主智能体在以下约束下执行最小必要改动：
 
-- repo instructions
-- selected backbone skill
-- selected specialist skill if applicable
+- 仓库级 instructions
+- 命中的骨架 skill
+- 如有需要，再命中的专业或辅助 skill
 
-It does not declare success based on subjective progress.
+它不得基于主观判断宣布完成。
 
-#### Verify
+#### 执行验证
 
-Every edit round must run a repository-aware verification matrix rather than a generic ECC command list.
+每轮修改后都必须运行“仓库感知”的验证矩阵，而不是直接照搬 ECC 中通用的命令模板。
 
-#### Full-Repo Review
+#### 全仓审查
 
-After each verification pass, the main agent must invoke `code-reviewer.agent.md`.
+每次验证结束后，主智能体必须调用 `code-reviewer.agent.md`。
 
-This reviewer performs:
+该 reviewer 负责：
 
-- full-repository review every round
-- fixed shard partitioning
-- severity-ranked findings
-- convergence assessment
+- 每轮都做全仓审查
+- 使用固定分片策略
+- 输出按严重级别排序的 findings
+- 给出收敛判断
 
-#### Decide
+#### 决定下一步
 
-The next step is chosen from evidence:
+下一步完全由证据决定：
 
-- verification failed -> fix and re-verify
-- verification passed but review found issues -> fix findings
-- repeated same-class failures -> invoke `loop-operator`
-- verification and review converge -> summarize and stop
+- 验证失败 -> 修复并重新验证
+- 验证通过但审查有问题 -> 修复 findings
+- 连续出现同类失败 -> 调用 `loop-operator`
+- 验证与审查都表明收敛 -> 输出总结并结束
 
-## Skill Layer Design
+## Skill 层设计
 
-### Backbone Skills from Superpowers
+### 来自 Superpowers 的骨架技能
 
-These should be ported into Copilot-native repo skills, not copied blindly.
+这些技能应改写为 Copilot 原生仓库级 skills，而不是直接原样复制。
 
 #### `sp-brainstorming`
 
-Source:
+来源：
 
 - `C:\Users\Administrator\.codex\superpowers\skills\brainstorming\SKILL.md`
 
-Keep:
+保留：
 
-- project-context-first design discipline
-- one-question-at-a-time clarification style
-- design-before-implementation rule
-- spec-first workflow
+- 先理解项目上下文再设计的纪律
+- 一次只问一个关键问题的澄清方式
+- 先设计、后实现的规则
+- 先写 spec 的工作流
 
-Change:
+调整：
 
-- remove harness-specific tool references
-- adapt wording for Copilot custom skills
-- write spec files to this repo's docs structure
+- 移除特定 harness 的工具引用
+- 改写为适配 Copilot custom skills 的表述
+- 将 spec 落到本仓库的 docs 结构
 
 #### `sp-writing-plans`
 
-Keep:
+保留：
 
-- detailed, execution-oriented implementation planning
-- dependency ordering
-- verification awareness
+- 面向执行的细化实现计划
+- 依赖顺序分析
+- 验证意识
 
-Adapt:
+调整：
 
-- CodexManager cross-layer impact analysis
-- planned verification commands mapped to actual repo commands
+- 面向 CodexManager 的跨层影响分析
+- 将计划中的验证命令映射到本仓库真实命令
 
 #### `sp-requesting-code-review`
 
-Keep:
+保留：
 
-- review-early principle
-- subagent-based review handoff
+- 尽早审查的原则
+- 基于子智能体的 review handoff 思路
 
-Adapt:
+调整：
 
-- make review mandatory after every edit round, not just task milestones
-- target repo-wide review instead of diff-only review
-- integrate with `.github/review-state`
+- 将审查改为“每轮编辑后都必须执行”，而不是只在阶段性里程碑后执行
+- 目标从 diff 审查提升为全仓审查
+- 与 `.github/review-state` 集成
 
 #### `sp-verification-before-completion`
 
-Keep:
+保留：
 
-- "no evidence, no completion claim"
+- “没有证据，就不能宣称完成”
 
-Adapt:
+调整：
 
-- consume `verify-summary.json`
-- require review summary before final stop
+- 消费 `verify-summary.json`
+- 最终停止前必须同时具备 review summary
 
 #### `sp-systematic-debugging`
 
-Keep:
+保留：
 
-- root-cause-first debugging
-- non-random failure investigation
+- 根因优先的调试方式
+- 反对随机试错式修复
 
-Use:
+使用场景：
 
-- when verify/review loops stall
+- verify/review 循环卡住时
 
 #### `sp-test-driven-development`
 
-Keep with adaptation:
+保留，但需调整：
 
-- TDD as preferred mode for new behavior and bugfixes
+- 将 TDD 作为新增功能与 bugfix 的优先模式
 
-But:
+但需明确：
 
-- do not force fake or low-value tests where repo constraints make that counterproductive
-- align with the repo's existing testing patterns
+- 不应为了形式正确而强行制造低价值测试
+- 必须与仓库现有测试模式保持一致
 
-### ECC Helper Skills
+### ECC 辅助技能
 
-Only port loop-relevant ideas.
+只迁入与循环直接相关的思想。
 
 #### `ecc-continuous-agent-loop`
 
-Source:
+来源：
 
 - `d:\Github\_tmp_ecc\skills\continuous-agent-loop\SKILL.md`
 
-Keep:
+保留：
 
-- loop safety
-- failure mode recognition
-- recovery options
+- 循环安全控制
+- 失败模式识别
+- 恢复策略
 
-Remove:
+移除：
 
-- ECC-specific external dependencies and named pipelines
+- ECC 专属外部依赖与命名工作流链条
 
 #### `ecc-verification-loop`
 
-Source:
+来源：
 
 - `d:\Github\_tmp_ecc\.agents\skills\verification-loop\SKILL.md`
 
-Keep:
+保留：
 
-- verification discipline across build, lint, type, tests, security, diff review
+- 对 build、lint、type、test、安全、diff review 的验证纪律
 
-Adapt:
+调整：
 
-- replace generic `npm build` assumptions with CodexManager-specific matrix
+- 用 CodexManager 专属验证矩阵替换通用 `npm build` 假设
 
 #### `ecc-search-first`
 
-Keep:
+保留：
 
-- repo-first and ecosystem-first reuse discipline
+- 先搜仓库、再搜生态、再决定复用还是自写的纪律
 
-Adapt:
+调整：
 
-- no MCP branch
-- prioritize local `rg` scans and repo pattern reuse
+- 去掉 MCP 分支
+- 优先使用本地 `rg` 与仓库现有模式复用
 
-### Professional Skill Layer
+### 专业技能层
 
 #### `pro-ui-ux-pro-max`
 
-Source:
+来源：
 
 - `C:\Users\Administrator\.codex\skills\ui-ux-pro-max`
 
-Keep:
+保留：
 
-- design-system generation flow
-- stack-aware UI guidance
-- implementation checklist
+- 设计系统生成流程
+- 面向技术栈的 UI 指南
+- UI 交付检查清单
 
-Adapt:
+调整：
 
-- relocate scripts and data into the skill directory under `.github/skills/pro-ui-ux-pro-max`
-- rewrite script paths to be repo-local and relative
-- clearly state that this skill never overrides the backbone loop
+- 将脚本与数据一起迁入 `.github/skills/pro-ui-ux-pro-max`
+- 将脚本路径改写为相对仓库内 skill 目录的本地路径
+- 明确声明：该 skill 绝不能覆盖骨架主循环
 
-### Explicitly Excluded Skill Types
+### 明确不迁入的 skill 类型
 
-Do not port these into the first design wave:
+第一波设计中不应迁入：
 
-- MCP-dependent skills
-- user-home bootstrap/install skills
-- ECC conventions tied only to the ECC repo itself
-- long-running observer or daemon skills
-- skills whose core value depends on external servers or global machine state
+- 依赖 MCP 才成立的 skills
+- 依赖用户主目录 bootstrap/install 的 skills
+- 只适用于 ECC 自身仓库 conventions 的 skills
+- 依赖长驻观察器或守护进程的 skills
+- 核心价值依赖外部服务或全局机器状态的 skills
 
-## Agent Layer Design
+## Agent 层设计
 
 ### `codexmanager-autoloop.agent.md`
 
-Purpose:
+用途：
 
-- primary entry agent for VS Code Agent Mode and Copilot CLI
+- VS Code Agent Mode 与 Copilot CLI 的主入口 agent
 
-Responsibilities:
+职责：
 
-- choose and invoke skills
-- implement changes
-- run verification
-- invoke review
-- continue until convergence or loop stop
+- 选择并调用 skills
+- 实施改动
+- 运行验证
+- 调用审查
+- 持续循环直到收敛或命中循环停止条件
 
-Required behavior:
+强制行为：
 
-- do not report completion based on self-assessment
-- after every edit round:
-  - mark repo state dirty
-  - run verification
-  - invoke review
-  - decide next step
-- summarize only when evidence says to stop
+- 不得基于自我判断报告完成
+- 每轮改动后都必须：
+  - 标记 repo 状态为 dirty
+  - 运行验证
+  - 调用 review
+  - 决定下一步
+- 只有证据允许停止时，才能输出总结
 
-Suggested tools:
+建议工具：
 
 - read/search
 - edit
@@ -462,110 +462,110 @@ Suggested tools:
 
 ### `code-reviewer.agent.md`
 
-Base source:
+基础来源：
 
 - `C:\Users\Administrator\.codex\superpowers\agents\code-reviewer.md`
 
-Key redesign:
+关键重设计：
 
-- review the whole repo every round, excluding generated/build directories
-- partition the repo into stable review shards
-- run shard reviews in parallel when the environment supports agent delegation
-- degrade to sequential shard review when needed
-- remain read-only by default
+- 每轮都审全仓，但排除生成物与构建产物目录
+- 按稳定分片边界切仓
+- 环境支持 agent delegation 时并行审片
+- 不支持时顺序降级
+- 默认保持只读
 
-Review shards:
+分片建议：
 
 - `apps/src`
 - `apps/src-tauri`
 - `crates/core`
 - `crates/service`
-- `scripts` and `.github`
-- docs and config
+- `scripts` 与 `.github`
+- docs 与配置层
 
-Output contract:
+输出契约：
 
-- findings first
-- severity order
-- file references
-- impact
-- recommended fix
-- convergence assessment
-- residual blind spots
+- findings 优先
+- 按严重级别排序
+- 包含文件引用
+- 说明影响
+- 提供修复建议
+- 给出收敛判断
+- 标出剩余盲区
 
 ### `loop-operator.agent.md`
 
-Base inspiration:
+灵感来源：
 
 - `d:\Github\_tmp_ecc\agents\loop-operator.md`
 
-Purpose:
+用途：
 
-- detect churn and stalled loops
-- reduce scope when the main loop is repeating
-- recommend a safer next cycle
+- 识别循环抖动与停滞
+- 当主循环重复同类动作时主动缩小 scope
+- 给出更安全的下一轮策略
 
-When invoked:
+调用时机：
 
-- repeated verification failures with the same class of error
-- repeated reviewer findings across consecutive rounds
-- no measurable progress across two cycles
+- 连续出现同类验证失败
+- 连续多轮 reviewer 给出同类 findings
+- 两轮内没有实质进展
 
-## Hook and Script Design
+## Hooks 与 Scripts 设计
 
-### Hook Philosophy
+### Hook 设计原则
 
-Hooks should trigger and gate. Scripts should do the work.
+Hooks 负责触发与卡口，Scripts 负责真正执行。
 
-### Hook Events
+### Hook 事件
 
-Per GitHub's documented hook system, the relevant events are:
+根据 GitHub 当前文档化 hook 系统，相关事件包括：
 
 - `SessionStart`
 - `PostToolUse`
 - `AgentStop`
 - `SubagentStop`
 
-The final file names and JSON shape should follow GitHub's current hook schema, but logically they serve these roles.
+最终文件名与 JSON 结构应遵循 GitHub 当下的 hook schema，但逻辑职责按照下文划分。
 
-### Planned Hook Responsibilities
+### 计划中的 Hook 职责
 
 #### Session start hook
 
-- initialize `.github/review-state`
-- clear stale state from previous sessions if needed
-- stamp session metadata
+- 初始化 `.github/review-state`
+- 必要时清理上一轮残留状态
+- 写入本次会话元数据
 
 #### Post-tool-use hook
 
-- detect that edit-producing tools ran
-- mark the session as requiring verification
-- avoid running heavy review directly inside the hook
+- 检测是否执行了会产生修改的工具
+- 若已发生修改，则标记本轮必须验证
+- 不在 hook 内直接执行高成本验证与审查
 
 #### Agent-stop hook
 
-- check whether the session is dirty
-- if dirty, confirm verification and review artifacts exist
-- if artifacts are missing, emit an instruction to continue the loop instead of treating the stop as converged
+- 检查当前会话是否仍为 dirty
+- 若 dirty，则确认验证与 review 产物是否存在
+- 若缺少产物，则发出“继续循环”而不是“可以结束”的约束信号
 
 #### Subagent-stop hook
 
-- collect shard review outputs
-- trigger aggregation when all expected shard outputs exist
+- 收集各审查分片输出
+- 当预期分片结果齐备时，触发聚合逻辑
 
-## Review and Verification Scripts
+## 审查与验证脚本设计
 
 ### `.github/scripts/loop/mark-dirty.ps1`
 
-Writes lightweight state:
+写入轻量状态：
 
-- whether code edits happened
-- timestamp
-- files touched if available
+- 是否已发生代码编辑
+- 时间戳
+- 如可获得，则记录本轮触碰文件
 
 ### `.github/scripts/verify/classify-changes.ps1`
 
-Determines impacted layers from changed files:
+根据变更文件判断受影响层级：
 
 - frontend
 - tauri bridge
@@ -575,212 +575,212 @@ Determines impacted layers from changed files:
 
 ### `.github/scripts/verify/run.ps1`
 
-Runs the minimum sufficient matrix for this repo.
+运行本仓库的最小充分验证矩阵。
 
-Rules:
+规则：
 
-- frontend changes -> `apps/` build path first
-- Tauri changes -> Tauri tests
-- core/service changes -> targeted Rust build or tests
-- protocol/gateway changes -> gateway regression scripts when applicable
+- frontend 改动 -> 优先跑 `apps/` 下构建链
+- Tauri 改动 -> 跑 Tauri tests
+- core/service 改动 -> 跑定向 Rust build 或 tests
+- protocol/gateway 改动 -> 在适用时跑 gateway regression 脚本
 
-Outputs:
+输出：
 
 - `.github/review-state/verify-summary.json`
 
 ### `.github/scripts/review/partition.ps1`
 
-Produces stable review shards every round.
+每轮生成稳定的审查分片。
 
 ### `.github/scripts/review/prepare-shard.ps1`
 
-Builds a shard context package:
+为每个分片生成上下文包：
 
-- scope paths
-- relevant recent file changes
-- matching instructions
-- verification status
+- 分片路径范围
+- 最近相关改动
+- 命中的 instructions
+- 验证状态
 
 ### `.github/scripts/review/aggregate.ps1`
 
-Consumes shard outputs and produces:
+消费多个分片审查输出，并生成：
 
-- deduplicated findings
-- severity totals
-- unchanged recurring findings
-- convergence recommendation
+- 去重后的 findings
+- 各严重级别计数
+- 跨轮未消除的重复问题
+- 收敛建议
 
-Outputs:
+输出：
 
 - `.github/review-state/review-summary.json`
 
 ### `.github/scripts/loop/decide-next-step.ps1`
 
-Reads verification and review artifacts and returns one of:
+读取验证与 review 产物，并输出以下之一：
 
 - `continue-fixing`
 - `rerun-verification`
 - `invoke-loop-operator`
 - `ready-to-summarize`
 
-## CodexManager-Specific Verification Matrix
+## CodexManager 专属验证矩阵
 
-The generic ECC workflow is not enough for this repo. Verification should be tied to existing repo guidance in `AGENTS.md`.
+ECC 通用验证流程不足以直接覆盖本仓库。本仓库验证必须绑定当前 `AGENTS.md` 中已有规则。
 
-### Default verification
+### 默认验证
 
-- frontend page/component/lib changes -> `pnpm run build:desktop` in `apps/`
-- targeted frontend lint only when helpful and lower-cost
+- frontend 页面、组件、`lib` 改动 -> 在 `apps/` 下执行 `pnpm run build:desktop`
+- 仅在有帮助且成本更低时补跑局部 lint
 
-### Tauri bridge changes
+### Tauri bridge 改动
 
-- `cargo test` in `apps/src-tauri/`
+- 在 `apps/src-tauri/` 执行 `cargo test`
 
-### Rust core/service changes
+### Rust core/service 改动
 
-- root workspace targeted build for `codexmanager-core` and `codexmanager-service`
-- service tests when gateway, config, account, key, or protocol logic changed
+- 在根工作区定向构建 `codexmanager-core` 与 `codexmanager-service`
+- 如果变更涉及 gateway、config、account、key 或 protocol 逻辑，再补跑 service tests
 
-### Protocol-specific changes
+### 协议专项改动
 
-- `scripts/tests/gateway_regression_suite.ps1` for gateway/protocol/tool-call/streaming compatibility changes
+- gateway/protocol/tool-call/streaming 兼容性改动时，执行 `scripts/tests/gateway_regression_suite.ps1`
 
-### High-cost commands
+### 高成本命令
 
-- do not default to `cargo test --all`
-- reserve full heavy regression for explicit release or deep validation work
+- 默认不执行 `cargo test --all`
+- 全量高成本回归仅在显式发布前或深度校验时使用
 
-## Full-Repository Review Policy
+## 全仓审查策略
 
-The user requirement is full-repo review every round. To make that feasible:
+用户要求是“每轮都全仓审查”。为了让这件事可执行：
 
-- always review all stable shards every round
-- exclude generated/build directories such as:
+- 每轮都审所有稳定分片
+- 排除生成物与构建产物目录，例如：
   - `.git`
   - `target`
   - `node_modules`
-  - other generated outputs
-- allow depth bias:
-  - changed shards get deepest attention
-  - unchanged shards still get mandatory policy and risk review
+  - 其它生成输出
+- 允许深度偏置：
+  - 本轮有改动的分片做最深审查
+  - 未改动分片仍执行强制性的规则与风险审查
 
-This keeps the policy "full repo every round" while preventing pointless review of generated artifacts.
+这样既满足“每轮全仓审查”，又避免把大量时间浪费在生成物上。
 
-## Changes Required to the Existing `AGENTS.md`
+## 对现有 `AGENTS.md` 的改造要求
 
-The current file already contains strong repository policy, but it needs restructuring.
+当前文件已经具备较强仓库规则基础，但需要重构。
 
-### Keep
+### 保留
 
-- repo-specific coding constraints
-- cross-layer verification rules
-- review-output expectations
-- no-MCP decision for this design
+- 仓库特有的编码约束
+- 跨层验证规则
+- 审查输出规范
+- 本设计中的 no-MCP 决策
 
-### Change
+### 修改
 
-- do not treat root `AGENTS.md` as the only customization asset
-- slim it down into a backbone instruction file
-- move operational detail into `.github/skills`, `.github/agents`, `.github/instructions`, and `.github/hooks`
-- add the autoloop rule set:
-  - no self-declared completion without evidence
-  - every edit round must verify
-  - every verify round must review
-  - review findings feed the next round
+- 不再将根 `AGENTS.md` 视为唯一的定制资产
+- 将其收敛为薄层 backbone instruction 文件
+- 将操作细节迁移到 `.github/skills`、`.github/agents`、`.github/instructions`、`.github/hooks`
+- 加入 autoloop 规则组：
+  - 没有证据不得自称完成
+  - 每轮编辑后必须验证
+  - 每轮验证后必须审查
+  - 审查 findings 必须回流到下一轮修复
 
-### Add
+### 新增
 
-- clear priority order for `sp-*`, `ecc-*`, and `pro-*` skills
-- explicit rule that specialist skills return control to the backbone loop
-- explicit escalation rule for `loop-operator`
+- `sp-*`、`ecc-*`、`pro-*` 的优先级规则
+- 专业技能执行后必须将控制权交还骨架循环的规则
+- `loop-operator` 的显式升级条件
 
-## Migration Plan
+## 迁移计划
 
-### Phase 1: Foundation
+### Phase 1：基础层
 
-- slim root `AGENTS.md`
-- add `.github/instructions`
-- add `.github/agents`
-- add empty `.github/review-state/.gitkeep` if needed
+- 收敛根目录 `AGENTS.md`
+- 新增 `.github/instructions`
+- 新增 `.github/agents`
+- 如需要，增加 `.github/review-state/.gitkeep`
 
-### Phase 2: Backbone skills
+### Phase 2：骨架 skills
 
-- port and rewrite the selected `sp-*` skills
+- 迁入并改写选定的 `sp-*` skills
 
-### Phase 3: ECC helper layer
+### Phase 3：ECC 辅助层
 
-- port and rewrite `ecc-*` loop helpers
+- 迁入并改写 `ecc-*` 循环辅助技能
 
-### Phase 4: Professional layer
+### Phase 4：专业层
 
-- port `pro-ui-ux-pro-max`
-- establish the extension contract for future `pro-*` skills
+- 迁入 `pro-ui-ux-pro-max`
+- 建立未来 `pro-*` 技能的扩展契约
 
-### Phase 5: Hooks and scripts
+### Phase 5：hooks 与 scripts
 
-- implement state, verification, shard prep, aggregation, and decision scripts
-- wire them through hooks
+- 实现状态、验证、分片准备、聚合与下一步决策脚本
+- 通过 hooks 接通整条链路
 
-### Phase 6: Dry-run validation
+### Phase 6：干跑验证
 
-- run a simulated task through:
-  - implementation
-  - verification
-  - reviewer shards
-  - next-step decision
+- 使用一个模拟任务跑通：
+  - 实施
+  - 验证
+  - reviewer 分片审查
+  - 下一步决策
 
-## Acceptance Criteria
+## 验收标准
 
-The design is successful when:
+当满足以下条件时，本设计视为成功：
 
-- a user can select `codexmanager-autoloop` in VS Code Agent Mode or Copilot CLI
-- the agent naturally uses repo-local skills and instructions
-- after edits, it verifies before claiming success
-- after verification, it invokes repo-wide review every round
-- review outputs are persisted under `.github/review-state`
-- the loop continues until review and verification converge
-- `pro-*` skills can be added later without rewriting the backbone architecture
+- 用户可以在 VS Code Agent Mode 或 Copilot CLI 中选择 `codexmanager-autoloop`
+- 该 agent 能自然命中仓库内的 skills 与 instructions
+- 编辑后会先验证，再决定是否可以继续
+- 验证后每轮都会执行全仓审查
+- review 输出会持久化到 `.github/review-state`
+- 循环会持续，直到验证与审查共同表明收敛
+- 将来新增 `pro-*` skills 时，无需重写骨架架构
 
-## Risks and Mitigations
+## 风险与缓解
 
-### Risk: loop cost and latency become too high
+### 风险：循环成本与延迟过高
 
-Mitigation:
+缓解：
 
-- shard the review
-- keep hooks lightweight
-- persist review state
-- reserve deep expensive commands for relevant change classes only
+- 分片审查
+- 保持 hooks 轻量
+- 持久化 review 状态
+- 仅对相关改动层级执行高成本命令
 
-### Risk: custom agents behave differently across VS Code, CLI, and GitHub.com
+### 风险：custom agents 在 VS Code、CLI、GitHub.com 的表现不一致
 
-Mitigation:
+缓解：
 
-- target VS Code Agent Mode and Copilot CLI first
-- treat GitHub.com compatibility as secondary
-- avoid depending on properties that are known to be ignored outside IDEs
+- 先以 VS Code Agent Mode 与 Copilot CLI 为主目标
+- GitHub.com 兼容性视为次级目标
+- 避免依赖已知只在部分环境生效的字段
 
-### Risk: specialist skills override core workflow
+### 风险：专业技能覆盖主流程
 
-Mitigation:
+缓解：
 
-- enforce in `AGENTS.md` and each `pro-*` skill that control returns to the backbone loop
+- 在 `AGENTS.md` 与每个 `pro-*` skill 中明确要求：执行后必须将控制权交回骨架循环
 
-### Risk: repo-level state files become noisy
+### 风险：仓库级状态文件过于嘈杂
 
-Mitigation:
+缓解：
 
-- keep them machine-readable and small
-- overwrite current-cycle summaries instead of appending uncontrolled logs
+- 保持机器可读且尽量精简
+- 用覆盖当前轮摘要替代无控制地追加日志
 
-## Recommended Decision
+## 推荐决策
 
-Proceed with:
+建议按以下方案推进：
 
-- root `AGENTS.md` retained as the thin always-on instruction layer
-- `.github/agents`, `.github/skills`, `.github/instructions`, `.github/hooks`, and `.github/scripts` added
-- `superpowers` as the backbone
-- ECC loop/verification patterns as helper layer only
-- `ui-ux-pro-max` as the first `pro-*` skill in an extensible professional skill tier
+- 保留根目录 `AGENTS.md`，但收敛为薄层常驻指令
+- 新增 `.github/agents`、`.github/skills`、`.github/instructions`、`.github/hooks`、`.github/scripts`
+- 以 `superpowers` 为骨架
+- 仅把 ECC 的循环与验证模式作为辅助层
+- 将 `ui-ux-pro-max` 作为第一批 `pro-*` 技能，并为未来专业技能扩展预留统一契约
 
-This is the most compatible way to get repo-level Copilot autonomy without relying on unsupported user-level or MCP-only machinery.
+这是在不依赖用户级安装与 MCP 的前提下，实现仓库级 Copilot 自主迭代的最兼容方案。
