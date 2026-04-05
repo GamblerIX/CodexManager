@@ -1,6 +1,6 @@
 ---
 name: review-frontend
-description: Review frontend changes in apps/src with focus on UI regressions, accessibility, and React boundaries.
+description: 审查 apps/src 中的前端改动，重点关注 UI 回归、可访问性和 React 边界。
 user-invocable: false
 tools:
   - read

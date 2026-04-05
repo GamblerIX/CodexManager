@@ -1,6 +1,6 @@
 ---
 name: review-core
-description: Review crates/core changes with focus on storage integrity, crypto, and Rust core correctness.
+description: 审查 crates/core 的改动，重点关注存储完整性、加密能力和 Rust 核心正确性。
 user-invocable: false
 tools:
   - read

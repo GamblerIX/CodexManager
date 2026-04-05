@@ -1,6 +1,6 @@
 ---
 name: loop-operator
-description: Detect repeated failures, churn, and over-scoped loops, then recommend a smaller next step.
+description: 识别重复失败、反复折腾和范围失控的循环，并建议更小、更可收敛的下一步。
 user-invocable: false
 tools:
   - read

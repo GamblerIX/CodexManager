@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Coordinate full-repo shard review, gather findings, and produce a ranked review summary.
+description: 协调整个仓库的分片审查，汇总发现的问题，并生成按严重级别排序的审查摘要。
 tools:
   - agent
   - read

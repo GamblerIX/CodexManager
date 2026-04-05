@@ -1,6 +1,6 @@
 ---
 name: review-meta
-description: Review repository-level meta changes like docs, scripts, workflows, configs, and release plumbing.
+description: 审查仓库级元信息改动，例如文档、脚本、工作流、配置以及发布相关链路。
 user-invocable: false
 tools:
   - read

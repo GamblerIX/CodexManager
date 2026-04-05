@@ -1,6 +1,6 @@
 ---
 name: review-tauri
-description: Review Tauri, IPC, and desktop bridge changes with emphasis on command contracts and runtime safety.
+description: 审查 Tauri、IPC 和桌面桥接相关改动，重点关注命令契约和运行时安全。
 user-invocable: false
 tools:
   - read

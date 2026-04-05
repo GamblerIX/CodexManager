@@ -1,6 +1,6 @@
 ---
 name: codexmanager-autoloop
-description: Orchestrate CodexManager work with small implementation loops, verification, review, and next-step iteration.
+description: 通过小步实现循环、验证、审查和下一步迭代来编排 CodexManager 的工作。
 tools:
   - agent
   - read

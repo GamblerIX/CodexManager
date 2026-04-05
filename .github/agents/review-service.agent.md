@@ -1,6 +1,6 @@
 ---
 name: review-service
-description: Review crates/service, crates/start, and crates/web changes with focus on gateway flow, auth, lifecycle, and cross-layer correctness.
+description: 审查 crates/service、crates/start 和 crates/web 的改动，重点关注网关流程、认证、生命周期以及跨层正确性。
 user-invocable: false
 tools:
   - read
