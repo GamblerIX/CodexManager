@@ -86,7 +86,7 @@ pub(super) use upstream::header_profile::{
     CodexCompactUpstreamHeaderInput, CodexUpstreamHeaderInput,
 };
 
-// HTTP backend runtime metrics are exported via the gateway `/metrics` endpoint as well.
+// HTTP 后端运行时指标也通过网关的 `/metrics` 端点导出。
 pub(crate) fn record_http_queue_capacity(normal_capacity: usize, stream_capacity: usize) {
     metrics::record_http_queue_capacity(normal_capacity, stream_capacity);
 }
@@ -164,45 +164,19 @@ fn extract_identity_error_code_from_error_json(raw: &str) -> Option<String> {
 }
 
 fn decode_base64_header_value(input: &[u8]) -> Option<Vec<u8>> {
-    fn decode_char(byte: u8) -> Option<u8> {
-        match byte {
-            b'A'..=b'Z' => Some(byte - b'A'),
-            b'a'..=b'z' => Some(byte - b'a' + 26),
-            b'0'..=b'9' => Some(byte - b'0' + 52),
-            b'+' | b'-' => Some(62),
-            b'/' | b'_' => Some(63),
-            _ => None,
-        }
-    }
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE};
+    use base64::Engine;
 
-    let filtered = input
-        .iter()
-        .copied()
-        .filter(|byte| !byte.is_ascii_whitespace())
-        .collect::<Vec<_>>();
-    if filtered.is_empty() || filtered.len() % 4 != 0 {
+    let filtered: Vec<u8> = input.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+    if filtered.is_empty() {
         return None;
     }
 
-    let mut output = Vec::with_capacity(filtered.len() / 4 * 3);
-    for chunk in filtered.chunks(4) {
-        let a = decode_char(chunk[0])?;
-        let b = decode_char(chunk[1])?;
-        let c_pad = chunk[2] == b'=';
-        let d_pad = chunk[3] == b'=';
-        let c = if c_pad { 0 } else { decode_char(chunk[2])? };
-        let d = if d_pad { 0 } else { decode_char(chunk[3])? };
-
-        output.push((a << 2) | (b >> 4));
-        if !c_pad {
-            output.push((b << 4) | (c >> 2));
-        }
-        if !d_pad {
-            output.push((c << 6) | d);
-        }
-    }
-
-    Some(output)
+    // 同时兼容 standard (+/) 和 URL-safe (-_) 编码
+    STANDARD
+        .decode(&filtered)
+        .or_else(|_| URL_SAFE.decode(&filtered))
+        .ok()
 }
 pub(super) use incoming_headers::IncomingHeaderSnapshot;
 use local_count_tokens::maybe_respond_local_count_tokens;
@@ -245,7 +219,8 @@ pub(crate) fn current_route_strategy() -> &'static str {
 
 pub(crate) fn set_route_strategy(strategy: &str) -> Result<&'static str, String> {
     let applied = route_hint::set_route_strategy(strategy)?;
-    std::env::set_var("CODEXMANAGER_ROUTE_STRATEGY", applied);
+    // SAFETY: 用户通过设置页面触发，单次操作
+    unsafe { std::env::set_var("CODEXMANAGER_ROUTE_STRATEGY", applied) };
     Ok(applied)
 }
 

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "pwsh -NoProfile -File ./.github/scripts/loop/mark-dirty.ps1 -Initialize",
+        "windows": "pwsh -NoProfile -File .\\.github\\scripts\\loop\\mark-dirty.ps1 -Initialize",
+        "cwd": ".",
+        "timeout": 10
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "pwsh -NoProfile -File ./.github/scripts/loop/mark-dirty.ps1",
+        "windows": "pwsh -NoProfile -File .\\.github\\scripts\\loop\\mark-dirty.ps1",
+        "cwd": ".",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "pwsh -NoProfile -File ./.github/scripts/loop/decide-next-step.ps1",
+        "windows": "pwsh -NoProfile -File .\\.github\\scripts\\loop\\decide-next-step.ps1",
+        "cwd": ".",
+        "timeout": 10
+      }
+    ]
+  }
+}

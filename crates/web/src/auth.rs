@@ -50,16 +50,44 @@ pub(super) fn parse_cookie_value(headers: &HeaderMap, cookie_name: &str) -> Opti
     })
 }
 
-fn set_cookie_header_value(value: &str) -> Option<HeaderValue> {
+fn request_prefers_secure_cookie(headers: &HeaderMap) -> bool {
+    if headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .is_some_and(|value| value.eq_ignore_ascii_case("https"))
+    {
+        return true;
+    }
+
+    headers
+        .get("forwarded")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .is_some_and(|value| {
+            value
+                .split(';')
+                .map(str::trim)
+                .filter_map(|part| part.split_once('='))
+                .any(|(key, value)| {
+                    key.trim().eq_ignore_ascii_case("proto")
+                        && value.trim().trim_matches('"').eq_ignore_ascii_case("https")
+                })
+        })
+}
+
+fn set_cookie_header_value(value: &str, secure: bool) -> Option<HeaderValue> {
+    let secure_attr = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{WEB_AUTH_COOKIE_NAME}={value}; Path=/; HttpOnly; SameSite=Lax"
+        "{WEB_AUTH_COOKIE_NAME}={value}; Path=/; HttpOnly; SameSite=Lax{secure_attr}"
     ))
     .ok()
 }
 
-fn clear_cookie_header_value() -> Option<HeaderValue> {
+fn clear_cookie_header_value(secure: bool) -> Option<HeaderValue> {
+    let secure_attr = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{WEB_AUTH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        "{WEB_AUTH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax{secure_attr}; Max-Age=0"
     ))
     .ok()
 }
@@ -98,7 +126,9 @@ fn request_is_authenticated(headers: &HeaderMap, state: &AppState) -> bool {
         &state.rpc_token,
         &state.web_auth_session_key,
     );
-    cookie_value == expected
+    // 使用恒定时间比较，防止时序侧信道攻击
+    use subtle::ConstantTimeEq;
+    cookie_value.as_bytes().ct_eq(expected.as_bytes()).into()
 }
 
 fn builtin_login_html(error: Option<&str>) -> String {
@@ -305,6 +335,7 @@ pub(super) async fn login_page(
 
 pub(super) async fn login_submit(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     axum::Form(form): axum::Form<LoginForm>,
 ) -> impl IntoResponse {
     let Some(password_hash) = current_web_access_password_hash() else {
@@ -325,7 +356,9 @@ pub(super) async fn login_submit(
         &state.web_auth_session_key,
     );
     let mut response = Html(login_success_html()).into_response();
-    if let Some(header_value) = set_cookie_header_value(&token) {
+    if let Some(header_value) =
+        set_cookie_header_value(&token, request_prefers_secure_cookie(&headers))
+    {
         response
             .headers_mut()
             .append(header::SET_COOKIE, header_value);
@@ -334,9 +367,9 @@ pub(super) async fn login_submit(
     response
 }
 
-pub(super) async fn logout() -> impl IntoResponse {
+pub(super) async fn logout(headers: HeaderMap) -> impl IntoResponse {
     let mut response = Html(logout_success_html()).into_response();
-    if let Some(header_value) = clear_cookie_header_value() {
+    if let Some(header_value) = clear_cookie_header_value(request_prefers_secure_cookie(&headers)) {
         response
             .headers_mut()
             .append(header::SET_COOKIE, header_value);
@@ -373,6 +406,33 @@ mod tests {
             assert!(!login_force_requested(&query), "value={value}");
         }
         assert!(!login_force_requested(&LoginQuery::default()));
+    }
+
+    #[test]
+    fn secure_cookie_prefers_forwarded_https_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert!(request_prefers_secure_cookie(&headers));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=127.0.0.1; proto=https; host=localhost"),
+        );
+        assert!(request_prefers_secure_cookie(&headers));
+    }
+
+    #[test]
+    fn cookie_header_value_only_adds_secure_when_needed() {
+        let secure = set_cookie_header_value("token", true)
+            .and_then(|value| value.to_str().ok().map(str::to_string))
+            .expect("secure cookie");
+        assert!(secure.contains("; Secure"));
+
+        let insecure = set_cookie_header_value("token", false)
+            .and_then(|value| value.to_str().ok().map(str::to_string))
+            .expect("insecure cookie");
+        assert!(!insecure.contains("; Secure"));
     }
 
     #[test]

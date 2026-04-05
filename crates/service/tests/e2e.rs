@@ -13,7 +13,8 @@ struct EnvGuard {
 impl EnvGuard {
     fn set(key: &'static str, value: &str) -> Self {
         let original = std::env::var_os(key);
-        std::env::set_var(key, value);
+        // SAFETY: 测试代码，不存在多线程并发调用环境变量的风险。
+        unsafe { std::env::set_var(key, value); }
         Self { key, original }
     }
 }
@@ -21,9 +22,9 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         if let Some(val) = &self.original {
-            std::env::set_var(self.key, val);
+            unsafe { std::env::set_var(self.key, val); }
         } else {
-            std::env::remove_var(self.key);
+            unsafe { std::env::remove_var(self.key); }
         }
     }
 }

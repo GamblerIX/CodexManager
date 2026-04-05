@@ -4,20 +4,13 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BarChart3,
-  Download,
   PencilLine,
   ExternalLink,
-  FileUp,
-  FolderOpen,
   MoreVertical,
   Pin,
-  Plus,
-  Power,
-  PowerOff,
   RefreshCw,
   Search,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AddAccountModal } from "@/components/modals/add-account-modal";
@@ -28,26 +21,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -77,124 +56,15 @@ import {
   isSecondaryWindowOnlyUsage,
 } from "@/lib/utils/usage";
 import { Account } from "@/types";
-
-type StatusFilter = "all" | "available" | "low_quota" | "banned";
-
-function formatGroupFilterLabel(value: string) {
-  const nextValue = String(value || "").trim();
-  if (!nextValue || nextValue === "all") {
-    return "全部分组";
-  }
-  return nextValue;
-}
-
-function formatStatusFilterLabel(value: string) {
-  const nextValue = String(value || "").trim();
-  switch (nextValue) {
-    case "available":
-      return "可用";
-    case "low_quota":
-      return "低配额";
-    case "banned":
-      return "封禁";
-    case "all":
-    default:
-      return "全部";
-  }
-}
-
-function formatAccountPlanLabel(account: Account): string | null {
-  const rawValue = String(account.planType || account.planTypeRaw || "").trim();
-  if (!rawValue) {
-    return null;
-  }
-
-  switch (rawValue.toLowerCase()) {
-    case "free":
-      return "Free";
-    case "go":
-      return "Go";
-    case "plus":
-      return "Plus";
-    case "pro":
-      return "Pro";
-    case "team":
-      return "Team";
-    case "business":
-      return "Business";
-    case "enterprise":
-      return "Enterprise";
-    case "edu":
-      return "Edu";
-    case "unknown":
-      return account.planTypeRaw || "Unknown";
-    default:
-      return account.planTypeRaw || rawValue;
-  }
-}
-
-interface QuotaProgressProps {
-  label: string;
-  remainPercent: number | null;
-  resetsAt: number | null;
-  icon: LucideIcon;
-  tone: "green" | "blue";
-  emptyText?: string;
-  emptyResetText?: string;
-}
-
-function QuotaProgress({
-  label,
-  remainPercent,
-  resetsAt,
-  icon: Icon,
-  tone,
-  emptyText = "--",
-  emptyResetText = "未知",
-}: QuotaProgressProps) {
-  const value = remainPercent ?? 0;
-  const trackClassName = tone === "blue" ? "bg-blue-500/20" : "bg-green-500/20";
-  const indicatorClassName = tone === "blue" ? "bg-blue-500" : "bg-green-500";
-
-  return (
-    <div className="flex min-w-[120px] flex-col gap-1">
-      <div className="flex items-center justify-between text-[10px]">
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <Icon className="h-3 w-3" />
-          <span>{label}</span>
-        </div>
-        <span className="font-medium">
-          {remainPercent == null ? emptyText : `${value}%`}
-        </span>
-      </div>
-      <Progress
-        value={value}
-        trackClassName={trackClassName}
-        indicatorClassName={indicatorClassName}
-      />
-      <div className="text-[10px] text-muted-foreground">
-        重置: {formatTsFromSeconds(resetsAt, emptyResetText)}
-      </div>
-    </div>
-  );
-}
-
-function getAccountStatusAction(account: Account): {
-  enable: boolean;
-  label: string;
-  icon: LucideIcon;
-} {
-  const normalizedStatus = String(account.status || "")
-    .trim()
-    .toLowerCase();
-  if (normalizedStatus === "disabled") {
-    return { enable: true, label: "启用账号", icon: Power };
-  }
-  if (normalizedStatus === "inactive") {
-    return { enable: true, label: "恢复账号", icon: Power };
-  }
-  return { enable: false, label: "禁用账号", icon: PowerOff };
-}
+import {
+  AccountSortDialog,
+  AccountsToolbar,
+  formatAccountPlanLabel,
+  getAccountStatusAction,
+  QuotaProgress,
+  type AccountSortDialogState,
+  type StatusFilter,
+} from "./account-page-parts";
 
 export default function AccountsPage() {
   const router = useRouter();
@@ -235,11 +105,7 @@ export default function AccountsPage() {
   const [usageModalOpen, setUsageModalOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [sortDraft, setSortDraft] = useState("");
-  const [sortDialogState, setSortDialogState] = useState<{
-    accountId: string;
-    accountName: string;
-    currentSort: number;
-  } | null>(null);
+  const [sortDialogState, setSortDialogState] = useState<AccountSortDialogState>(null);
   const [deleteDialogState, setDeleteDialogState] = useState<
     | { kind: "single"; account: Account }
     | { kind: "selected"; ids: string[]; count: number }
@@ -435,167 +301,29 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="glass-card border-none shadow-md backdrop-blur-md">
-        <CardContent className="grid gap-3 pt-0 lg:grid-cols-[200px_auto_minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0">
-            <Input
-              placeholder="搜索账号名 / 编号..."
-              className="glass-card h-10 rounded-xl px-3"
-              value={search}
-              onChange={(event) => handleSearchChange(event.target.value)}
-            />
-          </div>
-
-          <div className="flex shrink-0 items-center gap-3">
-            <Select value={groupFilter} onValueChange={handleGroupFilterChange}>
-              <SelectTrigger className="h-10 w-[140px] shrink-0 rounded-xl bg-card/50">
-                <SelectValue placeholder="全部分组">
-                  {(value) => formatGroupFilterLabel(String(value || ""))}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  全部分组 ({accounts.length})
-                </SelectItem>
-                {groups.map((group) => (
-                  <SelectItem key={group.label} value={group.label}>
-                    {group.label} ({group.count})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) =>
-                handleStatusFilterChange(value as StatusFilter)
-              }
-            >
-              <SelectTrigger className="h-10 w-[152px] shrink-0 rounded-xl bg-card/50">
-                <SelectValue placeholder="全部状态">
-                  {(value) => formatStatusFilterLabel(String(value || ""))}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {statusFilterOptions.map((filter) => (
-                  <SelectItem key={filter.id} value={filter.id}>
-                    {filter.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="hidden min-w-0 lg:block" />
-
-          <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0 lg:justify-self-end">
-            <DropdownMenu>
-              <DropdownMenuTrigger>
-                <Button
-                  variant="outline"
-                  className="glass-card h-10 min-w-[50px] justify-between gap-2 rounded-xl px-3"
-                  render={<span />}
-                  nativeButton={false}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-sm font-medium">账号操作</span>
-                    {effectiveSelectedIds.length > 0 ? (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                        {effectiveSelectedIds.length}
-                      </span>
-                    ) : null}
-                  </span>
-                  <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-64 rounded-xl border border-border/70 bg-popover/95 p-2 shadow-xl backdrop-blur-md"
-              >
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/80">
-                    账号管理
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem
-                    className="h-9 rounded-lg px-2"
-                    onClick={() => setAddAccountModalOpen(true)}
-                  >
-                    <Plus className="mr-2 h-4 w-4" /> 添加账号
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="h-9 rounded-lg px-2"
-                    onClick={() => importByFile()}
-                  >
-                    <FileUp className="mr-2 h-4 w-4" /> 按文件导入
-                    <DropdownMenuShortcut>FILE</DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="h-9 rounded-lg px-2"
-                    onClick={() => importByDirectory()}
-                  >
-                    <FolderOpen className="mr-2 h-4 w-4" /> 按文件夹导入
-                    <DropdownMenuShortcut>DIR</DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="h-9 rounded-lg px-2"
-                    disabled={isExporting}
-                    onClick={() => exportAccounts()}
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    导出账号
-                    <DropdownMenuShortcut>
-                      {isExporting ? "..." : "ZIP"}
-                    </DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/80">
-                    清理
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem
-                    disabled={!effectiveSelectedIds.length || isDeletingMany}
-                    variant="destructive"
-                    className="h-9 rounded-lg px-2"
-                    onClick={handleDeleteSelected}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" /> 删除选中账号
-                    <DropdownMenuShortcut>
-                      {effectiveSelectedIds.length || "-"}
-                    </DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    className="h-9 rounded-lg px-2"
-                    onClick={() => deleteUnavailableFree()}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" /> 一键清理不可用免费
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    className="h-9 rounded-lg px-2"
-                    onClick={handleDeleteBanned}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" /> 一键清理封禁账号
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              className="h-10 w-30 gap-1 rounded-xl shadow-lg shadow-primary/20"
-              onClick={() => refreshAllAccounts()}
-              disabled={isRefreshingAllAccounts}
-            >
-              <RefreshCw
-                className={cn(
-                  "h-4 w-1",
-                  isRefreshingAllAccounts && "animate-spin",
-                )}
-              />
-              刷新账号用量
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <AccountsToolbar
+        accountsCount={accounts.length}
+        effectiveSelectedCount={effectiveSelectedIds.length}
+        groupFilter={groupFilter}
+        groups={groups}
+        isDeletingMany={isDeletingMany}
+        isExporting={isExporting}
+        isRefreshingAllAccounts={isRefreshingAllAccounts}
+        onDeleteBanned={handleDeleteBanned}
+        onDeleteSelected={handleDeleteSelected}
+        onDeleteUnavailableFree={() => deleteUnavailableFree()}
+        onExportAccounts={() => exportAccounts()}
+        onGroupFilterChange={handleGroupFilterChange}
+        onImportByDirectory={() => importByDirectory()}
+        onImportByFile={() => importByFile()}
+        onOpenAddAccount={() => setAddAccountModalOpen(true)}
+        onRefreshAllAccounts={() => refreshAllAccounts()}
+        onSearchChange={handleSearchChange}
+        onStatusFilterChange={handleStatusFilterChange}
+        search={search}
+        statusFilter={statusFilter}
+        statusFilterOptions={statusFilterOptions}
+      />
 
       <Card className="glass-card overflow-hidden border-none py-0 shadow-xl backdrop-blur-md">
         <CardContent className="p-0">
@@ -978,61 +706,14 @@ export default function AccountsPage() {
         confirmVariant="destructive"
         onConfirm={handleConfirmDelete}
       />
-      <Dialog
-        open={Boolean(sortDialogState)}
-        onOpenChange={(open) => {
-          if (!open && !isUpdatingSortAccountId) {
-            setSortDialogState(null);
-          }
-        }}
-      >
-        <DialogContent className="glass-card border-none sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>编辑账号顺序</DialogTitle>
-            <DialogDescription>
-              {sortDialogState
-                ? `修改 ${sortDialogState.accountName} 的排序值。值越小越靠前。`
-                : "修改账号的排序值。"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 py-2">
-            <Label htmlFor="account-sort-input">顺序值</Label>
-            <Input
-              id="account-sort-input"
-              type="number"
-              min={0}
-              step={1}
-              value={sortDraft}
-              disabled={Boolean(isUpdatingSortAccountId)}
-              onChange={(event) => setSortDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void handleConfirmSort();
-                }
-              }}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              仅修改当前账号的排序值，不会自动重排其它账号。
-            </p>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              variant="outline"
-              disabled={Boolean(isUpdatingSortAccountId)}
-              onClick={() => setSortDialogState(null)}
-            >
-              取消
-            </Button>
-            <Button
-              disabled={Boolean(isUpdatingSortAccountId)}
-              onClick={() => void handleConfirmSort()}
-            >
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AccountSortDialog
+        isUpdatingSortAccountId={isUpdatingSortAccountId}
+        onClose={() => setSortDialogState(null)}
+        onConfirm={() => void handleConfirmSort()}
+        onSortDraftChange={setSortDraft}
+        sortDialogState={sortDialogState}
+        sortDraft={sortDraft}
+      />
     </div>
   );
 }

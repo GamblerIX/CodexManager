@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ctrlc = "3"
 webbrowser = "0.8"
+serde_json = "1"
 codexmanager-service = { path = "../service" }
 
 [target.'cfg(windows)'.dependencies]

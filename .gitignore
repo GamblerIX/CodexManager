@@ -49,3 +49,5 @@ Thumbs.db
 codex resume 019cbbf9-0037-73b1-b353-1cd0946a1acd
 Cargo.lock
 selection-cache-test-*
+pnpm-lock.yaml
+.omx/

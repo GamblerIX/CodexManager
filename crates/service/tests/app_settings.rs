@@ -84,7 +84,8 @@ fn with_temp_db(test: impl FnOnce(&PathBuf)) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db_path = unique_temp_db_path();
     let previous_db_path = std::env::var("CODEXMANAGER_DB_PATH").ok();
-    std::env::set_var("CODEXMANAGER_DB_PATH", &db_path);
+    // SAFETY: 测试代码，不存在多线程并发调用环境变量的风险。
+    unsafe { std::env::set_var("CODEXMANAGER_DB_PATH", &db_path); }
     codexmanager_service::initialize_storage_if_needed().expect("init storage");
     reset_runtime_defaults();
     let isolated_env_vars = ISOLATED_RUNTIME_ENV_KEYS
@@ -97,9 +98,9 @@ fn with_temp_db(test: impl FnOnce(&PathBuf)) {
 
     reset_runtime_defaults();
     if let Some(value) = previous_db_path {
-        std::env::set_var("CODEXMANAGER_DB_PATH", value);
+        unsafe { std::env::set_var("CODEXMANAGER_DB_PATH", value); }
     } else {
-        std::env::remove_var("CODEXMANAGER_DB_PATH");
+        unsafe { std::env::remove_var("CODEXMANAGER_DB_PATH"); }
     }
     let _ = std::fs::remove_file(&db_path);
 }
@@ -110,9 +111,9 @@ impl Drop for EnvRestore {
     fn drop(&mut self) {
         for (key, value) in self.0.drain(..) {
             if let Some(value) = value {
-                std::env::set_var(&key, value);
+                unsafe { std::env::set_var(&key, value); }
             } else {
-                std::env::remove_var(&key);
+                unsafe { std::env::remove_var(&key); }
             }
         }
     }
@@ -125,9 +126,9 @@ fn override_env_vars(vars: &[(&str, Option<&str>)]) -> EnvRestore {
         .collect::<Vec<_>>();
     for (key, value) in vars {
         if let Some(value) = value {
-            std::env::set_var(key, value);
+            unsafe { std::env::set_var(key, value); }
         } else {
-            std::env::remove_var(key);
+            unsafe { std::env::remove_var(key); }
         }
     }
     EnvRestore(previous)
@@ -433,7 +434,7 @@ fn app_settings_set_persists_snapshot_and_password_hash() {
             .expect("read password hash");
         assert!(stored_password
             .as_deref()
-            .is_some_and(|value| value.starts_with("sha256$")));
+            .is_some_and(|value| value.starts_with("$argon2") || value.starts_with("sha256$")));
     });
 }
 
@@ -997,6 +998,12 @@ fn app_settings_get_loads_env_backed_dedicated_settings_when_storage_missing() {
             snapshot
                 .get("serviceListenMode")
                 .and_then(|value| value.as_str()),
+            Some(codexmanager_service::SERVICE_BIND_MODE_LOOPBACK)
+        );
+        assert_eq!(
+            snapshot
+                .get("serviceListenModeEffective")
+                .and_then(|value| value.as_str()),
             Some(codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES)
         );
         assert_eq!(
@@ -1298,8 +1305,8 @@ fn app_settings_set_persists_env_overrides_and_exposes_catalog() {
 #[test]
 fn app_settings_get_seeds_full_env_override_snapshot() {
     with_temp_db(|db_path| {
-        std::env::remove_var("CODEXMANAGER_UPSTREAM_TOTAL_TIMEOUT_MS");
-        std::env::remove_var("CODEXMANAGER_WEB_ROOT");
+        unsafe { std::env::remove_var("CODEXMANAGER_UPSTREAM_TOTAL_TIMEOUT_MS"); }
+        unsafe { std::env::remove_var("CODEXMANAGER_WEB_ROOT"); }
 
         let snapshot = codexmanager_service::app_settings_get().expect("get app settings");
 

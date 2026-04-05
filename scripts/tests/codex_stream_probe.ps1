@@ -298,6 +298,24 @@ function Analyze-ResponsesStream
     }
 }
 
+function Get-EventCount
+{
+    param(
+        $EventCounts,
+        [string]$Name
+    )
+
+    if ($null -eq $EventCounts)
+    {
+        return 0
+    }
+    if ($EventCounts.ContainsKey($Name))
+    {
+        return [int]$EventCounts[$Name]
+    }
+    return 0
+}
+
 function Save-TraceTail
 {
     param(
@@ -400,6 +418,43 @@ $text += "  summary_json: $summaryPath"
 $text += "  summary_txt: $summaryTxtPath"
 
 $text -join [Environment]::NewLine | Set-Content -Path $summaryTxtPath -Encoding UTF8
+
+$validationErrors = New-Object System.Collections.Generic.List[string]
+if (-not $chat.done_seen)
+{
+    $validationErrors.Add("chat stream missing [DONE] terminator")
+}
+if ($chat.bad_json_frames -gt 0)
+{
+    $validationErrors.Add("chat stream contains invalid JSON frames")
+}
+if ($chat.likely_duplicate_render_risk)
+{
+    $validationErrors.Add("chat stream indicates duplicate render risk")
+}
+
+$hasTerminalResponseEvent =
+    (Get-EventCount -EventCounts $resp.event_counts -Name "response.completed") -gt 0 -or
+    (Get-EventCount -EventCounts $resp.event_counts -Name "response.failed") -gt 0 -or
+    (Get-EventCount -EventCounts $resp.event_counts -Name "response.incomplete") -gt 0
+if (-not $hasTerminalResponseEvent)
+{
+    $validationErrors.Add("responses stream missing terminal response event")
+}
+
+$hasOutputDoneEvent =
+    (Get-EventCount -EventCounts $resp.event_counts -Name "response.output_text.done") -gt 0 -or
+    (Get-EventCount -EventCounts $resp.event_counts -Name "response.output_item.done") -gt 0
+if (-not $hasOutputDoneEvent)
+{
+    $validationErrors.Add("responses stream missing output done event")
+}
+
+if ($validationErrors.Count -gt 0)
+{
+    $validationErrors | ForEach-Object { Write-Error $_ }
+    exit 1
+}
 
 Write-Host "Done."
 Write-Host "Output directory: $out"

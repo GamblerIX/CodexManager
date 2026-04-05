@@ -1,3 +1,4 @@
+use crate::crypto::{CryptoError, EncryptionContext};
 use rusqlite::{Connection, Result};
 use std::path::Path;
 use std::time::Duration;
@@ -15,6 +16,14 @@ mod request_token_stats;
 mod settings;
 mod tokens;
 mod usage;
+
+const SENSITIVE_STORAGE_COLUMNS: [(&str, &str); 5] = [
+    ("tokens", "id_token"),
+    ("tokens", "access_token"),
+    ("tokens", "refresh_token"),
+    ("tokens", "api_key_access_token"),
+    ("api_key_secrets", "key_value"),
+];
 
 #[derive(Debug, Clone)]
 pub struct Account {
@@ -192,10 +201,14 @@ pub struct ModelOptionsCacheRecord {
 #[derive(Debug)]
 pub struct Storage {
     conn: Connection,
+    encryption: EncryptionContext,
 }
 
 impl Storage {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let db_existed = path.exists();
+        let db_bytes = std::fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0);
         let conn = Connection::open(path)?;
         // 中文注释：并发写入时给 SQLite 一点等待时间，避免瞬时 lock 导致请求直接失败。
         conn.busy_timeout(Duration::from_millis(3000))?;
@@ -205,13 +218,97 @@ impl Storage {
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;",
         )?;
-        Ok(Self { conn })
+        let allow_create_if_missing = !db_existed
+            || db_bytes == 0
+            || !database_contains_encrypted_sensitive_rows(&conn)?;
+        let encryption =
+            EncryptionContext::for_db_path(path, allow_create_if_missing).map_err(crypto_open_error)?;
+        let storage = Self { conn, encryption };
+        storage.validate_encryption_samples()?;
+        storage.migrate_legacy_sensitive_fields()?;
+        Ok(storage)
     }
 
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.busy_timeout(Duration::from_millis(3000))?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            encryption: EncryptionContext::for_in_memory(),
+        })
+    }
+
+    fn validate_encryption_samples(&self) -> Result<()> {
+        for (table, column) in SENSITIVE_STORAGE_COLUMNS {
+            if let Some(sample) = self.first_encrypted_value(table, column)? {
+                self.encryption
+                    .decrypt_field(&sample)
+                    .map_err(crypto_open_error)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn migrate_legacy_sensitive_fields(&self) -> Result<()> {
+        for (table, column) in SENSITIVE_STORAGE_COLUMNS {
+            self.migrate_plaintext_sensitive_column(table, column)?;
+        }
+        Ok(())
+    }
+
+    fn first_encrypted_value(&self, table: &str, column: &str) -> Result<Option<String>> {
+        if !self.has_column(table, column)? {
+            return Ok(None);
+        }
+
+        let sql = format!(
+            "SELECT {column} FROM {table} WHERE {column} LIKE ?1 LIMIT 1",
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut rows = stmt.query([sensitive_column_prefix_pattern()])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn migrate_plaintext_sensitive_column(&self, table: &str, column: &str) -> Result<()> {
+        if !self.has_column(table, column)? {
+            return Ok(());
+        }
+
+        let select_sql = format!(
+            "SELECT rowid, {column}
+             FROM {table}
+             WHERE {column} IS NOT NULL
+               AND TRIM(COALESCE({column}, '')) <> ''
+               AND {column} NOT LIKE ?1",
+        );
+        let mut stmt = self.conn.prepare(&select_sql)?;
+        let mut rows = stmt.query([sensitive_column_prefix_pattern()])?;
+        let mut updates = Vec::new();
+        while let Some(row) = rows.next()? {
+            let row_id: i64 = row.get(0)?;
+            let raw_value: String = row.get(1)?;
+            let encrypted_value = self
+                .encryption
+                .encrypt_field(&raw_value)
+                .map_err(crypto_write_error)?;
+            updates.push((row_id, encrypted_value));
+        }
+        drop(rows);
+        drop(stmt);
+
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let update_sql = format!("UPDATE {table} SET {column} = ?1 WHERE rowid = ?2");
+        for (row_id, encrypted_value) in updates {
+            self.conn.execute(&update_sql, (&encrypted_value, row_id))?;
+        }
+        Ok(())
     }
 
     pub fn init(&self) -> Result<()> {
@@ -542,6 +639,62 @@ impl Storage {
             _ => false,
         }
     }
+}
+
+pub(super) fn crypto_open_error(err: CryptoError) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(err))
+}
+
+pub(super) fn crypto_write_error(err: CryptoError) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(err))
+}
+
+pub(super) fn crypto_read_error(column_index: usize, err: CryptoError) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        column_index,
+        rusqlite::types::Type::Text,
+        Box::new(err),
+    )
+}
+
+fn database_contains_encrypted_sensitive_rows(conn: &Connection) -> Result<bool> {
+    for (table, column) in SENSITIVE_STORAGE_COLUMNS {
+        if connection_contains_prefixed_value(conn, table, column)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn connection_contains_prefixed_value(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    if !connection_has_column(conn, table, column)? {
+        return Ok(false);
+    }
+
+    let sql = format!(
+        "SELECT EXISTS(SELECT 1 FROM {table} WHERE {column} LIKE ?1 LIMIT 1)",
+    );
+    conn.query_row(&sql, [sensitive_column_prefix_pattern()], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map(|value| value != 0)
+}
+
+fn connection_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let pragma = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&pragma)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let current: String = row.get(1)?;
+        if current == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn sensitive_column_prefix_pattern() -> String {
+    format!("{}%", crate::crypto::ENCRYPTED_PREFIX)
 }
 
 #[cfg(test)]

@@ -74,68 +74,73 @@ pub(crate) fn set_background_tasks_settings(
 ) -> BackgroundTasksSettings {
     ensure_background_tasks_config_loaded();
 
+    // SAFETY: 由 UI 单次操作触发，每个分支独立设置单个环境变量，不存在并发竞争。
     if let Some(enabled) = patch.usage_polling_enabled {
         USAGE_POLLING_ENABLED.store(enabled, Ordering::Relaxed);
-        std::env::set_var(ENV_USAGE_POLLING_ENABLED, if enabled { "1" } else { "0" });
+        unsafe { std::env::set_var(ENV_USAGE_POLLING_ENABLED, if enabled { "1" } else { "0" }); }
         if enabled {
-            std::env::remove_var(ENV_DISABLE_POLLING);
+            unsafe { std::env::remove_var(ENV_DISABLE_POLLING); }
         } else {
-            std::env::set_var(ENV_DISABLE_POLLING, "1");
+            unsafe { std::env::set_var(ENV_DISABLE_POLLING, "1"); }
         }
     }
     if let Some(secs) = patch.usage_poll_interval_secs {
         let normalized = secs.max(MIN_USAGE_POLL_INTERVAL_SECS);
         USAGE_POLL_INTERVAL_SECS.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_USAGE_POLL_INTERVAL_SECS, normalized.to_string());
+        unsafe { std::env::set_var(ENV_USAGE_POLL_INTERVAL_SECS, normalized.to_string()); }
     }
     if let Some(enabled) = patch.gateway_keepalive_enabled {
         GATEWAY_KEEPALIVE_ENABLED.store(enabled, Ordering::Relaxed);
-        std::env::set_var(
-            ENV_GATEWAY_KEEPALIVE_ENABLED,
-            if enabled { "1" } else { "0" },
-        );
+        unsafe {
+            std::env::set_var(
+                ENV_GATEWAY_KEEPALIVE_ENABLED,
+                if enabled { "1" } else { "0" },
+            );
+        }
     }
     if let Some(secs) = patch.gateway_keepalive_interval_secs {
         let normalized = secs.max(MIN_GATEWAY_KEEPALIVE_INTERVAL_SECS);
         GATEWAY_KEEPALIVE_INTERVAL_SECS.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_GATEWAY_KEEPALIVE_INTERVAL_SECS, normalized.to_string());
+        unsafe { std::env::set_var(ENV_GATEWAY_KEEPALIVE_INTERVAL_SECS, normalized.to_string()); }
     }
     if let Some(enabled) = patch.token_refresh_polling_enabled {
         TOKEN_REFRESH_POLLING_ENABLED.store(enabled, Ordering::Relaxed);
-        std::env::set_var(
-            ENV_TOKEN_REFRESH_POLLING_ENABLED,
-            if enabled { "1" } else { "0" },
-        );
+        unsafe {
+            std::env::set_var(
+                ENV_TOKEN_REFRESH_POLLING_ENABLED,
+                if enabled { "1" } else { "0" },
+            );
+        }
     }
     if let Some(secs) = patch.token_refresh_poll_interval_secs {
         let normalized = secs.max(MIN_TOKEN_REFRESH_POLL_INTERVAL_SECS);
         TOKEN_REFRESH_POLL_INTERVAL_SECS_ATOMIC.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_TOKEN_REFRESH_POLL_INTERVAL_SECS, normalized.to_string());
+        unsafe { std::env::set_var(ENV_TOKEN_REFRESH_POLL_INTERVAL_SECS, normalized.to_string()); }
     }
     if let Some(workers) = patch.usage_refresh_workers {
         let normalized = workers.max(1);
         USAGE_REFRESH_WORKERS.store(normalized, Ordering::Relaxed);
-        std::env::set_var(USAGE_REFRESH_WORKERS_ENV, normalized.to_string());
+        unsafe { std::env::set_var(USAGE_REFRESH_WORKERS_ENV, normalized.to_string()); }
     }
     if let Some(value) = patch.http_worker_factor {
         let normalized = value.max(1);
         HTTP_WORKER_FACTOR.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_HTTP_WORKER_FACTOR, normalized.to_string());
+        unsafe { std::env::set_var(ENV_HTTP_WORKER_FACTOR, normalized.to_string()); }
     }
     if let Some(value) = patch.http_worker_min {
         let normalized = value.max(1);
         HTTP_WORKER_MIN.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_HTTP_WORKER_MIN, normalized.to_string());
+        unsafe { std::env::set_var(ENV_HTTP_WORKER_MIN, normalized.to_string()); }
     }
     if let Some(value) = patch.http_stream_worker_factor {
         let normalized = value.max(1);
         HTTP_STREAM_WORKER_FACTOR.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_HTTP_STREAM_WORKER_FACTOR, normalized.to_string());
+        unsafe { std::env::set_var(ENV_HTTP_STREAM_WORKER_FACTOR, normalized.to_string()); }
     }
     if let Some(value) = patch.http_stream_worker_min {
         let normalized = value.max(1);
         HTTP_STREAM_WORKER_MIN.store(normalized, Ordering::Relaxed);
-        std::env::set_var(ENV_HTTP_STREAM_WORKER_MIN, normalized.to_string());
+        unsafe { std::env::set_var(ENV_HTTP_STREAM_WORKER_MIN, normalized.to_string()); }
     }
 
     background_tasks_settings()

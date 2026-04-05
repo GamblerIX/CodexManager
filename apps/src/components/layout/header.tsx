@@ -21,6 +21,12 @@ import {
 
 const DEFAULT_SERVICE_ADDR = "localhost:48760";
 
+function readPortFromAddr(addr: string | undefined): string {
+  const current = String(addr || DEFAULT_SERVICE_ADDR);
+  const [, port = current] = current.split(":");
+  return port || "48760";
+}
+
 export function Header() {
   const { serviceStatus, setServiceStatus, setAppSettings } = useAppStore();
   const runtimeCapabilities = useRuntimeCapabilities();
@@ -30,9 +36,7 @@ export function Header() {
   const [portInput, setPortInput] = useState("48760");
 
   useEffect(() => {
-    const current = String(serviceStatus.addr || DEFAULT_SERVICE_ADDR);
-    const [, port = current] = current.split(":");
-    setPortInput(port || "48760");
+    setPortInput(readPortFromAddr(serviceStatus.addr));
   }, [serviceStatus.addr]);
 
   const getPageTitle = () => {
@@ -64,7 +68,8 @@ export function Header() {
   const handleToggleService = async (enabled: boolean) => {
     setIsToggling(true);
     try {
-      const nextAddr = await persistServiceAddr(serviceStatus.addr || `localhost:${portInput}`);
+      const nextPort = portInput.trim() || readPortFromAddr(serviceStatus.addr);
+      const nextAddr = await persistServiceAddr(`localhost:${nextPort}`);
       if (enabled) {
         await serviceClient.start(nextAddr);
         const initResult = await serviceClient.initialize(nextAddr);
@@ -94,6 +99,7 @@ export function Header() {
       const nextAddr = await persistServiceAddr(`localhost:${portInput}`);
       setServiceStatus({ addr: nextAddr });
     } catch (error: unknown) {
+      setPortInput(readPortFromAddr(serviceStatus.addr));
       toast.error(`地址保存失败: ${formatServiceError(error)}`);
     }
   };
@@ -124,9 +130,6 @@ export function Header() {
                 onChange={(event) => {
                   const nextPort = event.target.value.replace(/[^\d]/g, "");
                   setPortInput(nextPort);
-                  if (nextPort) {
-                    setServiceStatus({ addr: `localhost:${nextPort}` });
-                  }
                 }}
                 onBlur={() => void handlePortBlur()}
               />

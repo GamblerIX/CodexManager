@@ -97,7 +97,7 @@ impl IncomingHeaderSnapshot {
     pub(crate) fn platform_key(&self) -> Option<&str> {
         self.x_api_key
             .as_deref()
-            .or(self.authorization_bearer_strict.as_deref())
+            .or(self.authorization_bearer_case_insensitive.as_deref())
     }
 
     pub(crate) fn sticky_key_material(&self) -> Option<&str> {

@@ -21,6 +21,38 @@ pub(super) async fn tcp_probe(addr: &str) -> bool {
     .unwrap_or(false)
 }
 
+/// 通过 JSON-RPC initialize 握手校验目标端口是否为 codexmanager-service。
+pub(super) async fn service_handshake_probe(addr: &str) -> bool {
+    let addr = addr.trim();
+    if addr.is_empty() {
+        return false;
+    }
+    let url = format!("http://{addr}/rpc");
+    let body = r#"{"id":0,"method":"initialize"}"#;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_millis(1000))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let resp = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await;
+    let Ok(resp) = resp else { return false };
+    let Ok(bytes) = resp.bytes().await else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    val.get("result")
+        .and_then(|r| r.get("server_name"))
+        .and_then(|n| n.as_str())
+        == Some("codexmanager-service")
+}
+
 fn service_bin_path(dir: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -54,8 +86,15 @@ pub(super) async fn ensure_service_running(
     dir: &Path,
     spawned_service: &Arc<Mutex<bool>>,
 ) -> Option<String> {
-    if tcp_probe(service_addr).await {
+    // 先尝试握手校验：确认已在运行的进程确实是 codexmanager-service
+    if service_handshake_probe(service_addr).await {
         return None;
+    }
+    // 端口被占用但不是 codexmanager-service
+    if tcp_probe(service_addr).await {
+        return Some(format!(
+            "端口 {service_addr} 已被占用但不是 codexmanager-service，请释放该端口后重试"
+        ));
     }
     if !should_spawn_service() {
         return Some(format!(
@@ -76,8 +115,9 @@ pub(super) async fn ensure_service_running(
     }
     *spawned_service.lock().await = true;
 
+    // 等待 service 启动完成，使用握手校验
     for _ in 0..50 {
-        if tcp_probe(service_addr).await {
+        if service_handshake_probe(service_addr).await {
             return None;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;

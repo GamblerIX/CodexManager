@@ -4,15 +4,18 @@ static RPC_AUTH_TOKEN: OnceLock<String> = OnceLock::new();
 
 fn build_rpc_auth_token() -> String {
     if let Some(token) = crate::process_env::read_rpc_token_from_env_or_file() {
-        std::env::set_var(crate::process_env::ENV_RPC_TOKEN, &token);
+        // SAFETY: 此函数仅在 OnceLock 初始化时（进程早期）调用一次
+        unsafe { std::env::set_var(crate::process_env::ENV_RPC_TOKEN, &token) };
         return token;
     }
 
     let generated = crate::process_env::generate_rpc_token_hex_32bytes();
-    std::env::set_var(crate::process_env::ENV_RPC_TOKEN, &generated);
+    // SAFETY: 同上，OnceLock 保证单次执行
+    unsafe { std::env::set_var(crate::process_env::ENV_RPC_TOKEN, &generated) };
 
     if let Some(existing) = crate::process_env::persist_rpc_token_if_missing(&generated) {
-        std::env::set_var(crate::process_env::ENV_RPC_TOKEN, &existing);
+        // SAFETY: 同上
+        unsafe { std::env::set_var(crate::process_env::ENV_RPC_TOKEN, &existing) };
         return existing;
     }
 

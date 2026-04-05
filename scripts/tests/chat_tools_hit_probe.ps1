@@ -10,8 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Use an intentionally long name to validate request-side shortening
-# and response-side name restoration.
+# 使用超长工具名称验证请求端缩短和响应端名称还原。
 $LongToolName =
     "mcp__tool_server_namespace_for_codex_manager_gateway_adapter_alignment__very_long_tool_operation_name"
 
@@ -105,7 +104,14 @@ function Print-NonStreamResult
     Write-Host "tool_arguments       : $toolArguments"
     Write-Host ""
     Write-Host "raw_response_json:"
-    Write-Output ($ResponseObject | ConvertTo-Json -Depth 100)
+    Write-Host ($ResponseObject | ConvertTo-Json -Depth 100)
+
+    return [pscustomobject]@{
+        tool_hit = $toolHit
+        restored_name_ok = $restoredOk
+        finish_reason = $finishReason
+        tool_name = $toolName
+    }
 }
 
 function Has-Property
@@ -194,7 +200,15 @@ function Print-StreamResult
     Write-Host "usage_seen           : $usageSeen"
     Write-Host ""
     Write-Host "raw_sse_lines:"
-    $Lines | ForEach-Object { Write-Output $_ }
+    $Lines | ForEach-Object { Write-Host $_ }
+
+    return [pscustomobject]@{
+        tool_hit = $toolHit
+        restored_name_ok = $restoredOk
+        finish_reason = $finishReason
+        tool_name = $toolName
+        usage_seen = $usageSeen
+    }
 }
 
 function Join-BaseAndEndpoint
@@ -231,11 +245,10 @@ function Invoke-ChatProbe
             Authorization = "Bearer $BearerKey"
         }
         $response = Invoke-RestMethod -Method Post -Uri $url -Headers $headers -Body $BodyJson -ContentType "application/json" -TimeoutSec $MaxSeconds
-        Print-NonStreamResult -ResponseObject $response -ExpectedToolName $ExpectedToolName
-        return
+        return (Print-NonStreamResult -ResponseObject $response -ExpectedToolName $ExpectedToolName)
     }
 
-    # Use curl for raw SSE frames to inspect delta.tool_calls.
+    # 使用 curl 获取原始 SSE 帧，以检查 delta.tool_calls。
     if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue))
     {
         throw "curl.exe not found"
@@ -267,7 +280,7 @@ function Invoke-ChatProbe
         {
             $lines = Get-Content -Path $outFile -Encoding UTF8
         }
-        Print-StreamResult -Lines $lines -ExpectedToolName $ExpectedToolName
+        return (Print-StreamResult -Lines $lines -ExpectedToolName $ExpectedToolName)
     } finally
     {
         if (Test-Path $tempDir)
@@ -280,7 +293,15 @@ function Invoke-ChatProbe
 try
 {
     $json = New-ChatBodyJson -BodyModel $Model -ToolName $LongToolName -EnableStream $Stream.IsPresent
-    Invoke-ChatProbe -BaseUrl $Base -UrlPath $Endpoint -BearerKey $ApiKey -BodyJson $json -MaxSeconds $TimeoutSeconds -EnableStream $Stream.IsPresent -ExpectedToolName $LongToolName
+    $result = Invoke-ChatProbe -BaseUrl $Base -UrlPath $Endpoint -BearerKey $ApiKey -BodyJson $json -MaxSeconds $TimeoutSeconds -EnableStream $Stream.IsPresent -ExpectedToolName $LongToolName
+    if (-not $result.tool_hit)
+    {
+        throw "expected tool call was not returned"
+    }
+    if (-not $result.restored_name_ok)
+    {
+        throw "tool name was not restored to the expected value"
+    }
 } catch
 {
     Write-Error ("chat tools probe failed: " + $_.Exception.Message)

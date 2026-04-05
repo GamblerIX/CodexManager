@@ -21,7 +21,7 @@ pub(crate) fn exe_dir() -> PathBuf {
 }
 
 fn strip_inline_comment(value: &str) -> &str {
-    // Only treat ` #` as comment start (common dotenv behavior).
+    // 仅将 ` #` 视为注释起始符（常见 dotenv 行为）。
     let Some(pos) = value.find(" #") else {
         return value;
     };
@@ -42,7 +42,7 @@ fn parse_dotenv_kv(line: &str) -> Option<(String, String)> {
         return None;
     }
     let mut value = raw_value.trim();
-    // Handle quoted values: KEY="a b", KEY='a b'
+    // 处理引号包裹的值：KEY="a b"、KEY='a b'
     if (value.starts_with('"') && value.ends_with('"') && value.len() >= 2)
         || (value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2)
     {
@@ -85,7 +85,8 @@ pub(crate) fn load_env_from_exe_dir() {
         if std::env::var_os(&key).is_some() {
             continue;
         }
-        std::env::set_var(key, value);
+        // SAFETY: 此函数仅在进程启动早期、tokio runtime 初始化前调用
+        unsafe { std::env::set_var(key, value) };
         applied += 1;
     }
 
@@ -112,7 +113,8 @@ pub(crate) fn ensure_default_db_path() -> PathBuf {
         Ok(raw) if !raw.trim().is_empty() => resolve_path_with_base(&raw, &dir),
         _ => dir.join(DEFAULT_DB_FILENAME),
     };
-    std::env::set_var(ENV_DB_PATH, resolved.to_string_lossy().as_ref());
+    // SAFETY: 此函数仅在进程启动早期单线程阶段调用
+    unsafe { std::env::set_var(ENV_DB_PATH, resolved.to_string_lossy().as_ref()) };
     resolved
 }
 
@@ -189,6 +191,13 @@ pub(crate) fn persist_rpc_token_if_missing(token: &str) -> Option<String> {
                 log::warn!(
                     "persist rpc token failed: {} ({})",
                     path.to_string_lossy(),
+                    err
+                );
+            }
+            if let Err(err) = codexmanager_core::crypto::restrict_file_permissions(&path) {
+                log::warn!(
+                    "rpc token file permission update failed ({}): {}",
+                    path.display(),
                     err
                 );
             }

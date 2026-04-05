@@ -257,13 +257,17 @@ impl Storage {
 
     pub fn upsert_api_key_secret(&self, key_id: &str, key_value: &str) -> Result<()> {
         let now = now_ts();
+        let enc_value = self
+            .encryption
+            .encrypt_field(key_value)
+            .map_err(super::crypto_write_error)?;
         self.conn.execute(
             "INSERT INTO api_key_secrets (key_id, key_value, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?3)
              ON CONFLICT(key_id) DO UPDATE SET
                key_value = excluded.key_value,
                updated_at = excluded.updated_at",
-            (key_id, key_value, now),
+            (key_id, &enc_value, now),
         )?;
         Ok(())
     }
@@ -274,7 +278,12 @@ impl Storage {
             .prepare("SELECT key_value FROM api_key_secrets WHERE key_id = ?1 LIMIT 1")?;
         let mut rows = stmt.query([key_id])?;
         if let Some(row) = rows.next()? {
-            Ok(Some(row.get(0)?))
+            let raw: String = row.get(0)?;
+            Ok(Some(
+                self.encryption
+                    .decrypt_field(&raw)
+                    .map_err(|err| super::crypto_read_error(0, err))?,
+            ))
         } else {
             Ok(None)
         }

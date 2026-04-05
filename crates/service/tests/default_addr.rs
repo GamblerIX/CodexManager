@@ -20,7 +20,8 @@ fn with_bind_mode(mode: Option<&str>, test: impl FnOnce()) {
     let _guard = env_lock().lock().expect("env lock");
     let db_path = unique_temp_db_path();
     let previous_db_path = std::env::var("CODEXMANAGER_DB_PATH").ok();
-    std::env::set_var("CODEXMANAGER_DB_PATH", &db_path);
+    // SAFETY: 测试代码，不存在多线程并发调用环境变量的风险。
+    unsafe { std::env::set_var("CODEXMANAGER_DB_PATH", &db_path); }
 
     let storage = Storage::open(&db_path).expect("open storage");
     storage.init().expect("init storage");
@@ -38,9 +39,9 @@ fn with_bind_mode(mode: Option<&str>, test: impl FnOnce()) {
     test();
 
     if let Some(value) = previous_db_path {
-        std::env::set_var("CODEXMANAGER_DB_PATH", value);
+        unsafe { std::env::set_var("CODEXMANAGER_DB_PATH", value); }
     } else {
-        std::env::remove_var("CODEXMANAGER_DB_PATH");
+        unsafe { std::env::remove_var("CODEXMANAGER_DB_PATH"); }
     }
     let _ = std::fs::remove_file(&db_path);
 }
@@ -114,7 +115,7 @@ fn configured_listener_bind_addr_uses_saved_mode_even_when_runtime_env_is_loopba
         Some(codexmanager_service::SERVICE_BIND_MODE_ALL_INTERFACES),
         || {
             let previous = std::env::var("CODEXMANAGER_SERVICE_ADDR").ok();
-            std::env::set_var("CODEXMANAGER_SERVICE_ADDR", "localhost:48760");
+            unsafe { std::env::set_var("CODEXMANAGER_SERVICE_ADDR", "localhost:48760"); }
 
             assert_eq!(
                 codexmanager_service::configured_listener_bind_addr("localhost:48760"),
@@ -122,9 +123,9 @@ fn configured_listener_bind_addr_uses_saved_mode_even_when_runtime_env_is_loopba
             );
 
             if let Some(value) = previous {
-                std::env::set_var("CODEXMANAGER_SERVICE_ADDR", value);
+                unsafe { std::env::set_var("CODEXMANAGER_SERVICE_ADDR", value); }
             } else {
-                std::env::remove_var("CODEXMANAGER_SERVICE_ADDR");
+                unsafe { std::env::remove_var("CODEXMANAGER_SERVICE_ADDR"); }
             }
         },
     );

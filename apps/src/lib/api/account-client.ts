@@ -147,7 +147,7 @@ function estimateEntryCount(contents: string[]): number {
         count += 1;
       }
     } catch {
-      // Fallback: count non-empty lines for text formats
+      // 回退：对文本格式计算非空行数
       const lines = content.split("\n").filter((l) => l.trim().length > 0);
       count += lines.length > 0 ? lines.length : 1;
     }

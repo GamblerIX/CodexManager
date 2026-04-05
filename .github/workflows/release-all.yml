@@ -1,24 +1,24 @@
-name: release-all
+name: 全平台发布
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.12)"
+        description: "发布标签（例如 v0.1.12）"
         required: true
         type: string
       ref:
-        description: "Git ref/branch/sha to build"
+        description: "要构建的 Git 引用 / 分支 / SHA"
         required: false
         default: "main"
         type: string
       run_verify:
-        description: "Run quality gate before building artifacts"
+        description: "在构建产物前先执行质量闸门"
         required: false
         default: true
         type: boolean
       prerelease:
-        description: "Release channel override (auto/true/false)"
+        description: "预发布通道覆盖（auto/true/false）"
         required: false
         default: auto
         type: choice
@@ -39,44 +39,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate_release_version:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.inputs.ref || 'main' }}
+
+      - name: 校验发布版本
+        uses: ./.github/actions/validate-release-version
+        with:
+          tag: ${{ github.event.inputs.tag }}
+
   verify:
+    needs: validate_release_version
     if: ${{ github.event.inputs.run_verify != 'false' }}
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: 检出代码
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.event.inputs.ref || 'main' }}
 
-      - name: Setup release environment
+      - name: 准备发布环境
         uses: ./.github/actions/setup-release-env
 
-      - name: Install frontend dependencies
+      - name: 安装前端依赖
         working-directory: apps
         run: pnpm install --frozen-lockfile
 
-      - name: Rust tests
+      - name: 运行 Rust 测试
         run: cargo test --workspace
 
-      - name: Frontend lint
+      - name: 运行前端 Lint
         working-directory: apps
         run: pnpm lint
 
-      - name: Frontend build
+      - name: 构建前端
         working-directory: apps
         run: pnpm run build:desktop
 
-      - name: Pack frontend dist artifact
+      - name: 打包前端 dist 制品
         shell: bash
         run: |
           set -euo pipefail
-          test -f apps/out/index.html || { echo "apps/out/index.html not found"; exit 1; }
+          test -f apps/out/index.html || { echo "未找到 apps/out/index.html"; exit 1; }
           rm -f frontend-dist.tar.gz
           tar -czf frontend-dist.tar.gz -C apps out
 
-      - name: Upload frontend dist artifact
-        uses: actions/upload-artifact@v6
+      - name: 上传前端 dist 制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-frontend-dist
           path: frontend-dist.tar.gz
@@ -84,32 +99,32 @@ jobs:
           compression-level: 0
 
   build_windows:
-    needs: verify
-    if: ${{ always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    needs: [validate_release_version, verify]
+    if: ${{ always() && needs.validate_release_version.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: 检出代码
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.event.inputs.ref || 'main' }}
 
-      - name: Setup release environment
+      - name: 准备发布环境
         uses: ./.github/actions/setup-release-env
         with:
           enable-pnpm-cache: "false"
           enable-rust-cache: "false"
 
-      - name: Prepare frontend dist
+      - name: 准备前端 dist
         uses: ./.github/actions/prepare-frontend-dist
         with:
           verify-result: ${{ needs.verify.result }}
 
-      - name: Disable redundant frontend rebuild for Tauri bundle
+      - name: 禁用 Tauri 打包前的重复前端重建
         shell: pwsh
         run: ./scripts/release/disable-tauri-before-build.ps1
 
-      - name: Build Tauri bundle (with retry)
+      - name: 构建 Tauri 安装包（带重试）
         uses: ./.github/actions/build-tauri-with-retry
         with:
           working-directory: apps
@@ -117,7 +132,7 @@ jobs:
           bundles: nsis
           shell-type: pwsh
 
-      - name: Stage desktop release assets
+      - name: 整理桌面端发布资产
         shell: pwsh
         run: |
           $releaseDir = Join-Path "${{ env.CARGO_TARGET_DIR }}" "release"
@@ -132,36 +147,36 @@ jobs:
 
           $source = Join-Path $releaseDir "CodexManager.exe"
           if (-not (Test-Path $source -PathType Leaf)) {
-            throw "portable source binary not found: $source"
+            throw "未找到便携版源二进制：$source"
           }
 
           $portableBinary = Join-Path $portableDir "CodexManager-portable.exe"
           Copy-Item -Force $source $portableBinary
-          Write-Host "portable binary: $portableBinary"
+          Write-Host "便携版二进制：$portableBinary"
 
           $installerSource = Get-ChildItem -Path $bundleDir -Recurse -File |
             Where-Object { $_.Name -like "*-setup.exe" -and $_.Name -notlike "*portable*" } |
             Sort-Object FullName |
             Select-Object -First 1
           if (-not $installerSource) {
-            throw "windows setup installer not found under: $bundleDir"
+            throw "未在以下目录找到 Windows 安装包：$bundleDir"
           }
 
           $installerTarget = Join-Path $desktopAssetsDir "CodexManager_${version}_${arch}-setup.exe"
           Copy-Item -Force $installerSource.FullName $installerTarget
           Copy-Item -Force $portableBinary (Join-Path $desktopAssetsDir "CodexManager-portable.exe")
           Get-ChildItem -Path $desktopAssetsDir -File | ForEach-Object {
-            Write-Host "desktop asset: $($_.FullName)"
+            Write-Host "桌面端资产：$($_.FullName)"
           }
 
-      - name: Build service binaries
+      - name: 构建服务端二进制
         shell: pwsh
         run: |
           cargo build -p codexmanager-service --release
           cargo build -p codexmanager-web --release --features embedded-ui
           cargo build -p codexmanager-start --release
 
-      - name: Stage service package
+      - name: 整理服务端发布包
         uses: ./.github/actions/stage-service-package
         with:
           platform: windows
@@ -171,16 +186,16 @@ jobs:
           binary-extension: .exe
           shell-type: pwsh
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+      - name: 上传桌面端制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-windows
           path: ${{ env.CARGO_TARGET_DIR }}/release/release-assets/*.exe
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload service artifacts
-        uses: actions/upload-artifact@v6
+      - name: 上传服务端制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-service-windows
           path: stage/*.zip
@@ -188,8 +203,8 @@ jobs:
           compression-level: 0
 
   build_macos_beta:
-    needs: verify
-    if: ${{ always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    needs: [validate_release_version, verify]
+    if: ${{ always() && needs.validate_release_version.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
     runs-on: macos-14
     strategy:
       fail-fast: false
@@ -201,28 +216,28 @@ jobs:
             rust_target: x86_64-apple-darwin
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: 检出代码
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.event.inputs.ref || 'main' }}
 
-      - name: Setup release environment
+      - name: 准备发布环境
         uses: ./.github/actions/setup-release-env
         with:
           rust-target: ${{ matrix.rust_target }}
           enable-pnpm-cache: "false"
           enable-rust-cache: "false"
 
-      - name: Prepare frontend dist
+      - name: 准备前端 dist
         uses: ./.github/actions/prepare-frontend-dist
         with:
           verify-result: ${{ needs.verify.result }}
 
-      - name: Disable redundant frontend rebuild for Tauri bundle
+      - name: 禁用 Tauri 打包前的重复前端重建
         shell: pwsh
         run: ./scripts/release/disable-tauri-before-build.ps1
 
-      - name: Build macOS app bundle
+      - name: 构建 macOS 应用包
         uses: ./.github/actions/build-tauri-with-retry
         with:
           working-directory: apps
@@ -231,17 +246,17 @@ jobs:
           target: ${{ matrix.rust_target }}
           shell-type: bash
 
-      - name: Rebuild macOS dmg with first-launch helper
+      - name: 重新生成带首次启动辅助的 macOS dmg
         shell: bash
         run: |
           set -euo pipefail
 
           release_dir="${{ env.CARGO_TARGET_DIR }}/${{ matrix.rust_target }}/release"
           bundle_root="${release_dir}/bundle"
-          test -d "$bundle_root" || { echo "macOS bundle root not found: $bundle_root"; exit 1; }
+          test -d "$bundle_root" || { echo "未找到 macOS bundle 根目录：$bundle_root"; exit 1; }
 
           bundle_dir="$(find "$bundle_root" -type d -path '*/CodexManager.app' | head -n 1)"
-          test -n "$bundle_dir" || { echo "macOS app bundle not found under: $bundle_root"; exit 1; }
+          test -n "$bundle_dir" || { echo "未在以下目录找到 macOS 应用包：$bundle_root"; exit 1; }
 
           dmg_dir="${bundle_root}/dmg"
           mkdir -p "$dmg_dir"
@@ -279,14 +294,14 @@ jobs:
               created=true
               break
             fi
-            echo "hdiutil create failed on attempt ${attempt}, retrying..."
+            echo "第 ${attempt} 次执行 hdiutil create 失败，准备重试……"
           done
 
-          $created || { echo "macOS dmg create failed after retries"; exit 1; }
+          $created || { echo "多次重试后仍未能生成 macOS dmg"; exit 1; }
           mv -f "$temp_dmg_path" "$dmg_path"
-          test -f "$dmg_path" || { echo "macOS dmg not created: $dmg_path"; exit 1; }
+          test -f "$dmg_path" || { echo "未生成 macOS dmg：$dmg_path"; exit 1; }
 
-      - name: Stage legacy macOS portable package
+      - name: 整理旧版 macOS 便携包
         if: ${{ matrix.arch == 'x64' }}
         shell: bash
         run: |
@@ -294,10 +309,10 @@ jobs:
 
           release_dir="${{ env.CARGO_TARGET_DIR }}/${{ matrix.rust_target }}/release"
           bundle_root="${release_dir}/bundle"
-          test -d "$bundle_root" || { echo "macOS bundle root not found: $bundle_root"; exit 1; }
+          test -d "$bundle_root" || { echo "未找到 macOS bundle 根目录：$bundle_root"; exit 1; }
 
           bundle_dir="$(find "$bundle_root" -type d -path '*/CodexManager.app' | head -n 1)"
-          test -n "$bundle_dir" || { echo "macOS app bundle not found under: $bundle_root"; exit 1; }
+          test -n "$bundle_dir" || { echo "未在以下目录找到 macOS 应用包：$bundle_root"; exit 1; }
 
           portable_dir="${release_dir}/portable"
           mkdir -p "$portable_dir"
@@ -305,16 +320,16 @@ jobs:
           zip_path="${portable_dir}/CodexManager-macos-portable.zip"
           rm -f "$zip_path"
           ditto -c -k --sequesterRsrc --keepParent "$bundle_dir" "$zip_path"
-          echo "legacy portable zip: $zip_path"
-          echo "source app bundle: $bundle_dir"
+          echo "旧版便携压缩包：$zip_path"
+          echo "源应用包：$bundle_dir"
 
-      - name: Build service binaries
+      - name: 构建服务端二进制
         run: |
           cargo build -p codexmanager-service --release --target ${{ matrix.rust_target }}
           cargo build -p codexmanager-web --release --features embedded-ui --target ${{ matrix.rust_target }}
           cargo build -p codexmanager-start --release --target ${{ matrix.rust_target }}
 
-      - name: Stage service package
+      - name: 整理服务端发布包
         uses: ./.github/actions/stage-service-package
         with:
           platform: macos
@@ -323,8 +338,8 @@ jobs:
           release-dir: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.rust_target }}/release
           shell-type: bash
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+      - name: 上传桌面端制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-macos-${{ matrix.arch }}
           path: |
@@ -333,8 +348,8 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload service artifacts
-        uses: actions/upload-artifact@v6
+      - name: 上传服务端制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-service-macos-${{ matrix.arch }}
           path: stage/*.zip
@@ -342,37 +357,37 @@ jobs:
           compression-level: 0
 
   build_linux:
-    needs: verify
-    if: ${{ always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    needs: [validate_release_version, verify]
+    if: ${{ always() && needs.validate_release_version.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: 检出代码
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.event.inputs.ref || 'main' }}
 
-      - name: Setup release environment
+      - name: 准备发布环境
         uses: ./.github/actions/setup-release-env
         with:
           enable-pnpm-cache: "false"
           enable-rust-cache: "false"
 
-      - name: Install Linux dependencies
+      - name: 安装 Linux 依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev zip
 
-      - name: Prepare frontend dist
+      - name: 准备前端 dist
         uses: ./.github/actions/prepare-frontend-dist
         with:
           verify-result: ${{ needs.verify.result }}
 
-      - name: Disable redundant frontend rebuild for Tauri bundle
+      - name: 禁用 Tauri 打包前的重复前端重建
         shell: pwsh
         run: ./scripts/release/disable-tauri-before-build.ps1
 
-      - name: Build Tauri bundle (with retry)
+      - name: 构建 Tauri 安装包（带重试）
         uses: ./.github/actions/build-tauri-with-retry
         with:
           working-directory: apps
@@ -380,7 +395,7 @@ jobs:
           bundles: appimage,deb
           shell-type: bash
 
-      - name: Stage portable package
+      - name: 整理便携包
         shell: bash
         run: |
           release_dir="${{ env.CARGO_TARGET_DIR }}/release"
@@ -389,7 +404,7 @@ jobs:
 
           source_bin="$release_dir/CodexManager"
           if [[ ! -f "$source_bin" ]]; then
-            echo "portable source binary not found: $source_bin"
+            echo "未找到便携版源二进制：$source_bin"
             exit 1
           fi
 
@@ -403,15 +418,15 @@ jobs:
             cd "$portable_dir"
             zip -q "CodexManager-linux-portable.zip" "CodexManager-portable"
           )
-          echo "portable package: $zip_path"
+          echo "便携包：$zip_path"
 
-      - name: Build service binaries
+      - name: 构建服务端二进制
         run: |
           cargo build -p codexmanager-service --release
           cargo build -p codexmanager-web --release --features embedded-ui
           cargo build -p codexmanager-start --release
 
-      - name: Stage service package
+      - name: 整理服务端发布包
         uses: ./.github/actions/stage-service-package
         with:
           platform: linux
@@ -420,8 +435,8 @@ jobs:
           release-dir: ${{ env.CARGO_TARGET_DIR }}/release
           shell-type: bash
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+      - name: 上传桌面端制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-linux
           path: |
@@ -431,8 +446,8 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload service artifacts
-        uses: actions/upload-artifact@v6
+      - name: 上传服务端制品
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: codexmanager-service-linux
           path: stage/*.zip
@@ -445,26 +460,25 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: 检出代码
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.event.inputs.ref || 'main' }}
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
+      - name: 下载构建产物
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           pattern: codexmanager-*
           merge-multiple: true
           path: release-assets
 
-      - name: List release assets
+      - name: 列出发布资产
         run: find release-assets -type f | sort
 
-      - name: Publish GitHub Release
+      - name: 发布 GitHub Release
         uses: ./.github/actions/publish-github-release
         with:
           tag: ${{ github.event.inputs.tag }}
           ref: ${{ github.event.inputs.ref || 'main' }}
           prerelease-input: ${{ github.event.inputs.prerelease || 'auto' }}
           assets-dir: release-assets
-

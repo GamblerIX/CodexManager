@@ -85,10 +85,7 @@ pub(crate) fn login_start(
         let _ = storage.insert_event(&Event {
             account_id: None,
             event_type: "login_start".to_string(),
-            message: format!(
-                "{{\"login_id\":\"{}\",\"code_verifier\":\"{}\"}}",
-                state, pkce.code_verifier
-            ),
+            message: format!("{{\"login_id\":\"{}\"}}", state),
             created_at: now_ts(),
         });
     }

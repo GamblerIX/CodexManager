@@ -161,7 +161,7 @@ impl Storage {
         let mut rows = stmt.query([])?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
-            out.push(map_gateway_candidate_row(row)?);
+            out.push(map_gateway_candidate_row(row, self)?);
         }
         Ok(out)
     }
@@ -516,19 +516,36 @@ fn map_account_row_from_offset(row: &Row<'_>, offset: usize) -> Result<Account> 
     })
 }
 
-fn map_token_row_from_offset(row: &Row<'_>, offset: usize) -> Result<Token> {
+fn map_token_row_from_offset(row: &Row<'_>, offset: usize, storage: &Storage) -> Result<Token> {
+    let id_token_raw: String = row.get(offset + 1)?;
+    let access_token_raw: String = row.get(offset + 2)?;
+    let refresh_token_raw: String = row.get(offset + 3)?;
+    let api_key_access_token_raw: Option<String> = row.get(offset + 4)?;
+
     Ok(Token {
         account_id: row.get(offset)?,
-        id_token: row.get(offset + 1)?,
-        access_token: row.get(offset + 2)?,
-        refresh_token: row.get(offset + 3)?,
-        api_key_access_token: row.get(offset + 4)?,
+        id_token: storage
+            .encryption
+            .decrypt_field(&id_token_raw)
+            .map_err(|err| super::crypto_read_error(offset + 1, err))?,
+        access_token: storage
+            .encryption
+            .decrypt_field(&access_token_raw)
+            .map_err(|err| super::crypto_read_error(offset + 2, err))?,
+        refresh_token: storage
+            .encryption
+            .decrypt_field(&refresh_token_raw)
+            .map_err(|err| super::crypto_read_error(offset + 3, err))?,
+        api_key_access_token: storage
+            .encryption
+            .decrypt_optional_field(api_key_access_token_raw)
+            .map_err(|err| super::crypto_read_error(offset + 4, err))?,
         last_refresh: row.get(offset + 5)?,
     })
 }
 
-fn map_gateway_candidate_row(row: &Row<'_>) -> Result<(Account, Token)> {
+fn map_gateway_candidate_row(row: &Row<'_>, storage: &Storage) -> Result<(Account, Token)> {
     let account = map_account_row_from_offset(row, 0)?;
-    let token = map_token_row_from_offset(row, 10)?;
+    let token = map_token_row_from_offset(row, 10, storage)?;
     Ok((account, token))
 }

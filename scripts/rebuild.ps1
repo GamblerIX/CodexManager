@@ -34,7 +34,7 @@ $rootTarget = Join-Path $root "target"
 $tauriTarget = Join-Path $tauriDir "target"
 $distDir = Join-Path $frontendRoot "out"
 $tauriConfig = Join-Path $tauriDir "tauri.conf.json"
-# Keep this aligned with .github/workflows/release-all.yml and build-tauri-with-retry.
+# 保持与 .github/workflows/release-all.yml 和 build-tauri-with-retry 一致。
 $tauriCliVersion = "2.10.1"
 
 $appName = "CodexManager"
@@ -247,7 +247,7 @@ function Invoke-AllPlatformBuild {
     throw "release tag required for -AllPlatforms. Pass -ReleaseTag (e.g. v0.0.6)."
   }
 
-  # Map legacy workflow names to the single release entry for backward compatibility.
+  # 将旧版工作流名称映射到统一发布入口，保持向后兼容。
   $workflowAlias = @{
     "release-windows.yml"         = "release-all.yml"
     "release-linux.yml"           = "release-all.yml"

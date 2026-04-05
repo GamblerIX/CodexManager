@@ -45,7 +45,7 @@ pub(crate) fn fetch_models_for_picker() -> Result<Vec<ModelOption>, String> {
         ) {
             Ok(response_body) => return Ok(parse_model_options(&response_body)),
             Err(err) => {
-                // ChatGPT upstream occasionally returns HTML challenge. Try OpenAI fallback.
+                // ChatGPT 上游偶尔返回 HTML 挑战页。尝试 OpenAI 回退路径。
                 if should_retry_models_with_openai_fallback(&err) {
                     if let Some(fallback_base) = upstream_fallback_base.as_deref() {
                         if let Ok(response_body) = send_models_request(

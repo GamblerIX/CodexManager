@@ -1,6 +1,5 @@
 use std::fs;
-use std::io;
-use std::io::Write;
+use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -144,7 +143,8 @@ fn load_env_from_exe_dir_best_effort() {
         if std::env::var_os(&key).is_some() {
             continue;
         }
-        std::env::set_var(key, value);
+        // SAFETY: 仅在 main() 启动阶段、单线程环境下执行，不存在并发竞争。
+        unsafe { std::env::set_var(key, value); }
     }
 }
 
@@ -236,6 +236,69 @@ fn tcp_probe(addr: &str) -> bool {
         }
     }
     false
+}
+
+/// 通过 JSON-RPC initialize 请求握手校验目标端口是否为 codexmanager-service。
+/// 返回 true 表示确认是 codexmanager-service 正在监听。
+fn service_handshake_probe(addr: &str) -> bool {
+    let addr = addr.trim();
+    if addr.is_empty() {
+        return false;
+    }
+    let addr = addr.strip_prefix("http://").unwrap_or(addr);
+    let addr = addr.strip_prefix("https://").unwrap_or(addr);
+    let host = addr.split('/').next().unwrap_or(addr);
+
+    let sock = match resolve_socket_addrs_best_effort(host).into_iter().next() {
+        Some(s) => s,
+        None => return false,
+    };
+    let mut stream = match TcpStream::connect_timeout(&sock, Duration::from_millis(500)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
+
+    let body = r#"{"id":0,"method":"initialize"}"#;
+    let req = format!(
+        "POST /rpc HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut reader = BufReader::new(&stream);
+    // 跳过 HTTP 响应头
+    let mut line = String::new();
+    let mut content_length: usize = 0;
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return false;
+        }
+        if let Some(val) = line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:")) {
+            content_length = val.trim().parse().unwrap_or(0);
+        }
+        if line.trim().is_empty() {
+            break;
+        }
+    }
+    if content_length == 0 || content_length > 4096 {
+        return false;
+    }
+    let mut body_buf = vec![0u8; content_length];
+    if io::Read::read_exact(&mut reader, &mut body_buf).is_err() {
+        return false;
+    }
+    let Ok(val) = serde_json::from_slice::<serde_json::Value>(&body_buf) else {
+        return false;
+    };
+    val.get("result")
+        .and_then(|r| r.get("server_name"))
+        .and_then(|n| n.as_str())
+        == Some("codexmanager-service")
 }
 
 fn simple_get_best_effort(addr: &str, path: &str) {
@@ -330,8 +393,11 @@ fn main() {
 
     let mut spawned_service = false;
     let mut service_child: Option<Child> = None;
-    if tcp_probe(&service_addr) {
-        println!("service 已在运行，跳过拉起。");
+    if service_handshake_probe(&service_addr) {
+        println!("service 已在运行（握手校验通过），跳过拉起。");
+    } else if tcp_probe(&service_addr) {
+        eprintln!("端口 {service_addr} 已被占用但不是 codexmanager-service，请释放该端口后重试。");
+        std::process::exit(1);
     } else if !service_bin.is_file() {
         eprintln!("service 不可达且缺少文件：{}", service_bin.display());
         std::process::exit(1);
@@ -355,10 +421,46 @@ fn main() {
         }
     }
 
-    // web 若已运行：直接打开浏览器，然后退出（避免占用端口再次启动失败）。
+    // web 若已运行：直接打开浏览器。若本次拉起了 service，需继续监督以维持
+    // Windows JobObject 句柄，否则主进程退出会导致 service 被终止。
     if tcp_probe(&web_addr) {
         println!("web 已在运行，直接打开浏览器。");
         let _ = webbrowser::open(&format!("http://{web_open_addr}/"));
+        if !spawned_service {
+            return;
+        }
+        println!("本次已拉起 service，保持监督以维持进程句柄...");
+        let should_exit = Arc::new(AtomicBool::new(false));
+        {
+            let flag = Arc::clone(&should_exit);
+            let _ = ctrlc::set_handler(move || {
+                flag.store(true, Ordering::SeqCst);
+            });
+        }
+        loop {
+            if should_exit.load(Ordering::SeqCst) {
+                break;
+            }
+            if let Some(child) = service_child.as_mut() {
+                if let Ok(Some(status)) = child.try_wait() {
+                    println!("service 已退出：{status}");
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        println!("正在关闭 service...");
+        simple_get_best_effort(&service_addr, "/__shutdown");
+        if let Some(child) = service_child.as_mut() {
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while std::time::Instant::now() < deadline {
+                if child.try_wait().ok().flatten().is_some() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let _ = child.kill();
+        }
         return;
     }
 

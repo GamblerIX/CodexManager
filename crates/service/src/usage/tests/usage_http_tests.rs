@@ -41,7 +41,8 @@ impl UsageHeaderDbGuard {
         let path = unique_db_path("codexmanager-usage-header-runtime");
         let previous = std::env::var("CODEXMANAGER_DB_PATH").ok();
         crate::storage_helpers::clear_storage_cache_for_tests();
-        std::env::set_var("CODEXMANAGER_DB_PATH", &path);
+        // SAFETY: 测试代码运行在单线程或使用互斥锁保护，不会发生并发 set_var 竞争。
+        unsafe { std::env::set_var("CODEXMANAGER_DB_PATH", &path); }
         Self { path, previous }
     }
 }
@@ -49,9 +50,10 @@ impl UsageHeaderDbGuard {
 impl Drop for UsageHeaderDbGuard {
     fn drop(&mut self) {
         crate::storage_helpers::clear_storage_cache_for_tests();
+        // SAFETY: 同上，测试环境下受 lock_env 互斥锁保护。
         match self.previous.as_deref() {
-            Some(value) => std::env::set_var("CODEXMANAGER_DB_PATH", value),
-            None => std::env::remove_var("CODEXMANAGER_DB_PATH"),
+            Some(value) => unsafe { std::env::set_var("CODEXMANAGER_DB_PATH", value) },
+            None => unsafe { std::env::remove_var("CODEXMANAGER_DB_PATH") },
         }
         let _ = std::fs::remove_file(&self.path);
     }
@@ -298,7 +300,8 @@ fn usage_request_headers_use_official_chatgpt_account_header_name() {
 #[test]
 fn refresh_token_url_uses_official_default_for_openai_issuer() {
     let _lock = lock_env();
-    std::env::remove_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE");
+    // SAFETY: 测试环境下受 lock_env 互斥锁保护。
+    unsafe { std::env::remove_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE"); }
 
     assert_eq!(
         super::resolve_refresh_token_url("https://auth.openai.com"),
@@ -315,24 +318,27 @@ fn refresh_token_url_preserves_custom_issuer_and_override() {
     let _lock = lock_env();
     let previous = std::env::var("CODEX_REFRESH_TOKEN_URL_OVERRIDE").ok();
 
-    std::env::remove_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE");
+    // SAFETY: 测试环境下受 lock_env 互斥锁保护。
+    unsafe { std::env::remove_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE"); }
     assert_eq!(
         super::resolve_refresh_token_url("https://auth.example.com"),
         "https://auth.example.com/oauth/token"
     );
 
-    std::env::set_var(
-        "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
-        "https://override.example.com/custom/token",
-    );
+    unsafe {
+        std::env::set_var(
+            "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
+            "https://override.example.com/custom/token",
+        );
+    }
     assert_eq!(
         super::resolve_refresh_token_url("https://auth.example.com"),
         "https://override.example.com/custom/token"
     );
 
     match previous {
-        Some(value) => std::env::set_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE", value),
-        None => std::env::remove_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE"),
+        Some(value) => unsafe { std::env::set_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE", value) },
+        None => unsafe { std::env::remove_var("CODEX_REFRESH_TOKEN_URL_OVERRIDE") },
     }
 }
 

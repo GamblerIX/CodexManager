@@ -24,7 +24,7 @@ fn force_connection_close(headers: &mut Vec<(String, String)>) {
 }
 
 fn body_has_encrypted_content_hint(body: &[u8]) -> bool {
-    // Fast path: avoid JSON parsing unless we hit the recovery path.
+    // 快速路径：仅在命中恢复路径时才进行 JSON 解析。
     std::str::from_utf8(body)
         .ok()
         .is_some_and(|text| text.contains("\"encrypted_content\""))
@@ -116,10 +116,10 @@ pub(super) fn try_openai_fallback(
     let attempt_started_at = Instant::now();
     let is_openai_api_target = super::is_openai_api_base(upstream_base);
 
-    // `x-codex-turn-state` is an org-scoped encrypted blob. When we hit API-key fallback
-    // (often a different org than the ChatGPT workspace), forwarding it can trigger:
-    // `invalid_encrypted_content` / organization_id mismatch. In that case, prefer
-    // resetting session affinity to keep the request usable.
+    // `x-codex-turn-state` 是组织级范围的加密 blob。当命中 API-key 回退路径时
+    // （通常是与 ChatGPT workspace 不同的组织），转发该头可能触发：
+    // `invalid_encrypted_content` / organization_id 不匹配。这种情况下优先
+    // 重置会话亲和性，保持请求可用。
     let strip_session_affinity =
         strip_session_affinity || incoming_headers.turn_state().is_some() || is_openai_api_target;
     let body_for_request =

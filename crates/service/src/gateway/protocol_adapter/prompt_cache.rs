@@ -85,7 +85,7 @@ impl PromptCacheConfig {
 
 struct PromptCache {
     by_key: HashMap<String, PromptCacheEntry>,
-    // LRU ordering by monotonic tick: smallest tick = least recently seen.
+    // LRU 排序基于单调递增 tick：最小 tick = 最近最少使用。
     lru_by_tick: BTreeMap<u64, String>,
     tick: u64,
     last_cleanup: Instant,
@@ -106,12 +106,12 @@ impl PromptCache {
     fn get_or_create(&mut self, key: &str, now: Instant) -> String {
         self.maybe_cleanup(now);
 
-        // Fast path: key hit.
+        // 快速路径：缓存命中。
         let mut expired_tick: Option<u64> = None;
         let mut touch: Option<(String, u64, u64)> = None;
         if let Some(entry) = self.by_key.get_mut(key) {
             if is_entry_expired(entry.last_seen, now, self.config.ttl) {
-                // If the accessed entry is expired, drop it immediately (no full scan).
+                // 如果访问的条目已过期，立即丢弃它（不做全量扫描）。
                 expired_tick = Some(entry.lru_tick);
             } else {
                 let old_tick = entry.lru_tick;
@@ -171,7 +171,7 @@ impl PromptCache {
                 .retain(|_, entry| !is_entry_expired(entry.last_seen, now, ttl));
         }
 
-        // Rebuild the LRU index to avoid drift (e.g. if entries were pruned).
+        // 重建 LRU 索引以避免漂移（例如条目被剪裁后）。
         self.lru_by_tick.clear();
         for (key, entry) in self.by_key.iter() {
             self.lru_by_tick.insert(entry.lru_tick, key.clone());

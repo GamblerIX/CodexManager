@@ -48,9 +48,9 @@ impl RequestGateLock {
     ) -> Result<Option<RequestGateGuard>, RequestGateAcquireError> {
         let mut state = match self.state.lock() {
             Ok(guard) => guard,
-            Err(_) => {
-                log::warn!("event=lock_poisoned lock=request_gate_state action=skip");
-                return Err(RequestGateAcquireError::Poisoned);
+            Err(poisoned) => {
+                log::warn!("event=lock_poisoned lock=request_gate_state action=recover_try");
+                poisoned.into_inner()
             }
         };
         if state.held {
@@ -69,17 +69,29 @@ impl RequestGateLock {
     ) -> Result<Option<RequestGateGuard>, RequestGateAcquireError> {
         let state = match self.state.lock() {
             Ok(guard) => guard,
-            Err(_) => {
-                log::warn!("event=lock_poisoned lock=request_gate_state action=skip_wait");
-                return Err(RequestGateAcquireError::Poisoned);
+            Err(poisoned) => {
+                log::warn!("event=lock_poisoned lock=request_gate_state action=recover_wait");
+                poisoned.into_inner()
             }
         };
         let wait_result = self
             .available
             .wait_timeout_while(state, timeout, |state| state.held);
         let Ok((mut state, _)) = wait_result else {
-            log::warn!("event=lock_poisoned lock=request_gate_state action=skip_wait_timeout");
-            return Err(RequestGateAcquireError::Poisoned);
+            log::warn!("event=lock_poisoned lock=request_gate_state action=recover_wait_timeout");
+            // Condvar 等待期间锁中毒，尝试恢复后检查状态
+            let mut state = match self.state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if state.held {
+                return Ok(None);
+            }
+            state.held = true;
+            drop(state);
+            return Ok(Some(RequestGateGuard {
+                lock: Arc::clone(self),
+            }));
         };
         if state.held {
             return Ok(None);

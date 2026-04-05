@@ -334,7 +334,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
   const init = useCallback(async () => {
     const desktopRuntime = runtimeCapabilities.isDesktop;
 
-    // Only show full screen loading if we haven't initialized once
+    // 仅在首次初始化前显示全屏加载
     if (!hasInitializedOnce.current) {
       setIsInitializing(true);
     }
@@ -353,8 +353,7 @@ export function AppBootstrap({ children }: { children: React.ReactNode }) {
       
       setAppSettings(settings);
       
-      // CRITICAL: Do not reset status to connected: false if we are already connected
-      // This prevents the Header badge from flashing
+      // 关键：若已连接则不要重置为 connected: false，防止 Header 徽章闪烁
       if (!currentServiceStatus.connected || currentServiceStatus.addr !== addr) {
         setServiceStatus({ addr, connected: false, version: "" });
       }

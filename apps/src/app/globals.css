@@ -386,6 +386,23 @@ body.low-transparency .sonner-toast {
   box-shadow: none !important;
 }
 
+body.low-transparency [data-slot='dialog-overlay'],
+body.low-transparency .dashboard-pool-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.low-transparency [data-slot='dialog-overlay'] {
+  background: rgb(0 0 0 / 0.28) !important;
+}
+
+body.low-transparency .dashboard-pool-card,
+body.low-transparency .settings-preset-preview,
+body.low-transparency .settings-preset-preview-tile {
+  background: var(--card-solid) !important;
+  box-shadow: none !important;
+}
+
 :root { --card-solid: #ffffff; }
 [data-theme='dark'] { --card-solid: #09090b; }
 [data-theme='dark-one'] { --card-solid: #21252b; }

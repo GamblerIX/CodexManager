@@ -117,6 +117,9 @@ const WEB_COMMAND_MAP: Record<string, WebCommandDescriptor> = {
       if (!url) {
         throw new Error("缺少浏览器跳转地址");
       }
+      if (!/^https?:\/\//i.test(url)) {
+        throw new Error("不允许的 URL scheme");
+      }
       if (typeof window === "undefined") {
         throw new Error("当前环境不支持打开浏览器");
       }
@@ -503,7 +506,7 @@ export async function requestlogListViaHttpRpc<T>(
   addr: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  // Desktop environment should use Tauri invoke for reliability
+  // 桌面环境应使用 Tauri invoke 以确保可靠性
   if (isTauriRuntime()) {
     return invoke<T>(
       "service_requestlog_list",
@@ -518,7 +521,7 @@ export async function requestlogListViaHttpRpc<T>(
     );
   }
 
-  // Fallback for web mode if needed (though not primary for this app)
+  // Web 模式回退路径（虽然不是本应用主要场景）
   const body = JSON.stringify({
     jsonrpc: "2.0",
     id: Date.now(),

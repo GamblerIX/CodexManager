@@ -114,6 +114,14 @@ for ($i = 0; $i -lt 240; $i++) {
   if (-not (Get-Process -Id $PidToWait -ErrorAction SilentlyContinue)) { break }
   Start-Sleep -Milliseconds 500
 }
+Write-Log "清理旧版本已删除的条目"
+$stagingNames = @(Get-ChildItem -LiteralPath $StagingDir -Force | ForEach-Object { $_.Name })
+Get-ChildItem -LiteralPath $TargetDir -Force | ForEach-Object {
+  if ($stagingNames -notcontains $_.Name) {
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log ("已删除旧文件: " + $_.Name)
+  }
+}
 Write-Log "开始复制暂存文件"
 Get-ChildItem -LiteralPath $StagingDir -Force | ForEach-Object {
   Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $TargetDir $_.Name) -Recurse -Force
@@ -185,6 +193,22 @@ while kill -0 "$PID_TO_WAIT" 2>/dev/null && [ "$i" -lt 240 ]; do
   sleep 0.5
 done
 
+log "清理旧版本已删除的条目"
+for entry in "$TARGET_DIR"/*; do
+  name="$(basename "$entry")"
+  if [ ! -e "$STAGING_DIR/$name" ]; then
+    rm -rf "$entry"
+    log "已删除旧文件: $name"
+  fi
+done
+for entry in "$TARGET_DIR"/.*; do
+  name="$(basename "$entry")"
+  case "$name" in .|..) continue ;; esac
+  if [ ! -e "$STAGING_DIR/$name" ]; then
+    rm -rf "$entry"
+    log "已删除旧隐藏文件: $name"
+  fi
+done
 log "开始复制暂存文件"
 cp -Rf "$STAGING_DIR"/. "$TARGET_DIR"/ || {
   log "复制暂存文件失败"

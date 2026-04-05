@@ -8,8 +8,8 @@ use std::time::Duration;
 static USAGE_HTTP_CLIENT: OnceLock<RwLock<Client>> = OnceLock::new();
 const USAGE_HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const ENV_UPSTREAM_PROXY_URL: &str = "CODEXMANAGER_UPSTREAM_PROXY_URL";
-// NOTE: rely on reqwest built-in timeout (covers the full request including response body read).
-// Avoid background worker threads + recv_timeout which cannot cancel the underlying read.
+// 注意：依赖 reqwest 内建超时（覆盖完整请求包括响应体读取）。
+// 避免使用后台工作线程 + recv_timeout，因为其无法取消底层读取。
 const USAGE_HTTP_TOTAL_TIMEOUT: Duration = Duration::from_secs(60);
 const REFRESH_TOKEN_EXPIRED_MESSAGE: &str =
     "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.";

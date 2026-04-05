@@ -20,7 +20,8 @@ struct EnvGuard {
 impl EnvGuard {
     fn set(key: &'static str, value: &str) -> Self {
         let original = std::env::var_os(key);
-        std::env::set_var(key, value);
+        // SAFETY: 测试代码，不存在多线程并发调用环境变量的风险。
+        unsafe { std::env::set_var(key, value); }
         Self { key, original }
     }
 }
@@ -28,9 +29,9 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         if let Some(value) = &self.original {
-            std::env::set_var(self.key, value);
+            unsafe { std::env::set_var(self.key, value); }
         } else {
-            std::env::remove_var(self.key);
+            unsafe { std::env::remove_var(self.key); }
         }
     }
 }
@@ -246,6 +247,58 @@ fn rpc_initialize_roundtrip() {
     let v = post_rpc(&server.addr, &json);
     let result = v.get("result").expect("result");
     assert_eq!(result.get("server_name").unwrap(), "codexmanager-service");
+}
+
+#[test]
+fn rpc_server_start_fails_when_keyfile_is_invalid() {
+    let ctx = RpcTestContext::new("rpc-invalid-keyfile");
+    fs::write(ctx.dir.join(".codexmanager.keyfile"), [1u8, 2u8, 3u8])
+        .expect("write invalid keyfile");
+
+    let result = codexmanager_service::start_one_shot_server();
+    assert!(result.is_err(), "server should fail to start with invalid keyfile");
+    let err = result.err().expect("expected startup error");
+    assert!(err.to_string().contains("长度无效"));
+}
+
+#[test]
+fn rpc_server_start_fails_when_keyfile_does_not_match_existing_ciphertext() {
+    let ctx = RpcTestContext::new("rpc-wrong-keyfile");
+    let storage = Storage::open(ctx.db_path()).expect("open db");
+    storage.init().expect("init schema");
+    storage
+        .insert_account(&Account {
+            id: "acc-wrong-keyfile".to_string(),
+            label: "encrypted".to_string(),
+            issuer: "https://auth.openai.com".to_string(),
+            chatgpt_account_id: None,
+            workspace_id: None,
+            group_name: None,
+            sort: 0,
+            status: "active".to_string(),
+            created_at: now_ts(),
+            updated_at: now_ts(),
+        })
+        .expect("insert account");
+    storage
+        .insert_token(&codexmanager_core::storage::Token {
+            account_id: "acc-wrong-keyfile".to_string(),
+            id_token: "encrypted-id".to_string(),
+            access_token: "encrypted-access".to_string(),
+            refresh_token: "encrypted-refresh".to_string(),
+            api_key_access_token: None,
+            last_refresh: now_ts(),
+        })
+        .expect("insert encrypted token");
+    drop(storage);
+
+    fs::write(ctx.dir.join(".codexmanager.keyfile"), [9u8; 32])
+        .expect("overwrite keyfile with wrong bytes");
+
+    let result = codexmanager_service::start_one_shot_server();
+    assert!(result.is_err(), "server should fail to start with wrong keyfile");
+    let err = result.err().expect("expected startup error");
+    assert!(err.to_string().contains("解密失败"));
 }
 
 #[test]

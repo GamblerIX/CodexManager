@@ -127,7 +127,7 @@ fn insert_request_log_with_token_stat_is_visible_via_join() {
 #[test]
 fn token_stat_failure_still_commits_request_log() {
     let storage = Storage::open_in_memory().expect("open");
-    // Only create request_logs table, so request_token_stats insert fails.
+    // 仅创建 request_logs 表，使 request_token_stats 插入失败。
     storage
         .ensure_request_logs_table()
         .expect("ensure logs table");

@@ -4,6 +4,22 @@ use super::{Storage, Token};
 
 impl Storage {
     pub fn insert_token(&self, token: &Token) -> Result<()> {
+        let enc_id_token = self
+            .encryption
+            .encrypt_field(&token.id_token)
+            .map_err(super::crypto_write_error)?;
+        let enc_access_token = self
+            .encryption
+            .encrypt_field(&token.access_token)
+            .map_err(super::crypto_write_error)?;
+        let enc_refresh_token = self
+            .encryption
+            .encrypt_field(&token.refresh_token)
+            .map_err(super::crypto_write_error)?;
+        let enc_api_key_access_token = self
+            .encryption
+            .encrypt_optional_field(&token.api_key_access_token)
+            .map_err(super::crypto_write_error)?;
         self.conn.execute(
             "INSERT INTO tokens (account_id, id_token, access_token, refresh_token, api_key_access_token, last_refresh)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -15,10 +31,10 @@ impl Storage {
                 last_refresh = excluded.last_refresh",
             (
                 &token.account_id,
-                &token.id_token,
-                &token.access_token,
-                &token.refresh_token,
-                &token.api_key_access_token,
+                &enc_id_token,
+                &enc_access_token,
+                &enc_refresh_token,
+                &enc_api_key_access_token,
                 token.last_refresh,
             ),
         )?;
@@ -60,7 +76,7 @@ impl Storage {
         let mut rows = stmt.query((now_ts, limit as i64))?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
-            out.push(map_token_row(row)?);
+            out.push(map_token_row(row, self)?);
         }
         Ok(out)
     }
@@ -103,7 +119,7 @@ impl Storage {
         let mut rows = stmt.query([])?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
-            out.push(map_token_row(row)?);
+            out.push(map_token_row(row, self)?);
         }
         Ok(out)
     }
@@ -127,7 +143,7 @@ impl Storage {
         let mut rows = stmt.query(params)?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
-            out.push(map_token_row(row)?);
+            out.push(map_token_row(row, self)?);
         }
         Ok(out)
     }
@@ -141,7 +157,7 @@ impl Storage {
         )?;
         let mut rows = stmt.query([account_id])?;
         if let Some(row) = rows.next()? {
-            Ok(Some(map_token_row(row)?))
+            Ok(Some(map_token_row(row, self)?))
         } else {
             Ok(None)
         }
@@ -170,13 +186,31 @@ impl Storage {
     }
 }
 
-fn map_token_row(row: &Row<'_>) -> Result<Token> {
+/// 从数据库行映射 Token 结构体，并解密敏感字段
+fn map_token_row(row: &Row<'_>, storage: &Storage) -> Result<Token> {
+    let id_token_raw: String = row.get(1)?;
+    let access_token_raw: String = row.get(2)?;
+    let refresh_token_raw: String = row.get(3)?;
+    let api_key_access_token_raw: Option<String> = row.get(4)?;
+
     Ok(Token {
         account_id: row.get(0)?,
-        id_token: row.get(1)?,
-        access_token: row.get(2)?,
-        refresh_token: row.get(3)?,
-        api_key_access_token: row.get(4)?,
+        id_token: storage
+            .encryption
+            .decrypt_field(&id_token_raw)
+            .map_err(|err| super::crypto_read_error(1, err))?,
+        access_token: storage
+            .encryption
+            .decrypt_field(&access_token_raw)
+            .map_err(|err| super::crypto_read_error(2, err))?,
+        refresh_token: storage
+            .encryption
+            .decrypt_field(&refresh_token_raw)
+            .map_err(|err| super::crypto_read_error(3, err))?,
+        api_key_access_token: storage
+            .encryption
+            .decrypt_optional_field(api_key_access_token_raw)
+            .map_err(|err| super::crypto_read_error(4, err))?,
         last_refresh: row.get(5)?,
     })
 }

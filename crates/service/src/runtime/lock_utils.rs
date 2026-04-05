@@ -1,7 +1,7 @@
 use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-/// Consistent lock-poison strategy for this crate:
-/// - Recover via `into_inner()` (best-effort keep service running)
+/// 本 crate 统一的锁中毒处理策略：
+/// - 通过 `into_inner()` 恢复（尽力保持服务运行）
 /// - Emit a warn log with a stable lock name for diagnostics.
 pub(crate) fn lock_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> MutexGuard<'a, T> {
     match mutex.lock() {

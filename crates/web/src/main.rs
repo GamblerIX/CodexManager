@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{Request, State};
+use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -225,6 +225,7 @@ async fn async_main() {
 
     let mut protected_app = Router::new()
         .route("/api/rpc", post(service_gateway::rpc_proxy))
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024)) // 16 MiB
         .route("/__quit", get(service_gateway::quit));
 
     let disk_ok = ensure_index_file(&index);

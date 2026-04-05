@@ -43,7 +43,7 @@ export async function fetchWithRetry(
       clearTimeout(id);
       lastError = err;
       if (err instanceof Error && err.name === "AbortError" && !options.signal?.aborted) {
-        // Timeout retry
+        // 超时重试
       } else if (i === retries) {
         throw err;
       }

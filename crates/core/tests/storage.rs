@@ -2,6 +2,24 @@ use codexmanager_core::storage::{
     now_ts, Account, ApiKey, Event, RequestLog, RequestTokenStat, Storage, Token,
     UsageSnapshotRecord,
 };
+use rusqlite::Connection;
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn create_temp_dir(prefix: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "codexmanager_storage_{prefix}_{}_{}",
+        std::process::id(),
+        unique
+    ));
+    fs::create_dir_all(&dir).expect("create temp dir");
+    dir
+}
 
 #[test]
 fn storage_can_insert_account_and_token() {
@@ -89,6 +107,157 @@ fn storage_can_find_token_and_account_by_account_id() {
         .find_token_by_account_id("missing-account")
         .expect("find missing token")
         .is_none());
+}
+
+#[test]
+fn storage_can_read_legacy_plaintext_token_rows() {
+    let dir = create_temp_dir("legacy_plaintext");
+    let db_path = dir.join("codexmanager.db");
+
+    {
+        let storage = Storage::open(&db_path).expect("open file storage");
+        storage.init().expect("init schema");
+
+        storage
+            .insert_account(&Account {
+                id: "acc-legacy-1".to_string(),
+                label: "legacy".to_string(),
+                issuer: "https://auth.openai.com".to_string(),
+                chatgpt_account_id: None,
+                workspace_id: None,
+                group_name: None,
+                sort: 0,
+                status: "active".to_string(),
+                created_at: now_ts(),
+                updated_at: now_ts(),
+            })
+            .expect("insert account");
+
+        let conn = Connection::open(&db_path).expect("open raw db connection");
+        conn.execute(
+            "INSERT INTO tokens (account_id, id_token, access_token, refresh_token, api_key_access_token, last_refresh)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (
+                "acc-legacy-1",
+                "legacy-id-token",
+                "legacy-access-token",
+                "legacy-refresh-token",
+                Option::<String>::None,
+                now_ts(),
+            ),
+        )
+        .expect("insert legacy plaintext token");
+    }
+
+    {
+        let storage = Storage::open(&db_path).expect("reopen file storage");
+        let token = storage
+            .find_token_by_account_id("acc-legacy-1")
+            .expect("find token")
+            .expect("token exists");
+        assert_eq!(token.id_token, "legacy-id-token");
+        assert_eq!(token.access_token, "legacy-access-token");
+        assert_eq!(token.refresh_token, "legacy-refresh-token");
+        assert_eq!(token.api_key_access_token, None);
+
+        let conn = Connection::open(&db_path).expect("reopen raw db connection");
+        let stored_access_token: String = conn
+            .query_row(
+                "SELECT access_token FROM tokens WHERE account_id = ?1",
+                ["acc-legacy-1"],
+                |row| row.get(0),
+            )
+            .expect("query migrated token");
+        assert!(codexmanager_core::crypto::is_encrypted(&stored_access_token));
+    }
+
+    fs::remove_dir_all(&dir).expect("cleanup temp dir");
+}
+
+#[test]
+fn storage_open_fails_when_keyfile_is_missing_for_encrypted_rows() {
+    let dir = create_temp_dir("missing_keyfile");
+    let db_path = dir.join("codexmanager.db");
+    let key_path = dir.join(".codexmanager.keyfile");
+
+    {
+        let storage = Storage::open(&db_path).expect("open file storage");
+        storage.init().expect("init schema");
+        storage
+            .insert_account(&Account {
+                id: "acc-missing-keyfile".to_string(),
+                label: "encrypted".to_string(),
+                issuer: "https://auth.openai.com".to_string(),
+                chatgpt_account_id: None,
+                workspace_id: None,
+                group_name: None,
+                sort: 0,
+                status: "active".to_string(),
+                created_at: now_ts(),
+                updated_at: now_ts(),
+            })
+            .expect("insert account");
+        storage
+            .insert_token(&Token {
+                account_id: "acc-missing-keyfile".to_string(),
+                id_token: "encrypted-id".to_string(),
+                access_token: "encrypted-access".to_string(),
+                refresh_token: "encrypted-refresh".to_string(),
+                api_key_access_token: None,
+                last_refresh: now_ts(),
+            })
+            .expect("insert encrypted token");
+    }
+
+    fs::remove_file(&key_path).expect("remove keyfile");
+
+    let err = Storage::open(&db_path).expect_err("missing keyfile should fail");
+    assert!(err.to_string().contains("缺少加密 keyfile"));
+
+    fs::remove_dir_all(&dir).expect("cleanup temp dir");
+}
+
+#[test]
+fn storage_open_fails_when_keyfile_does_not_match_existing_ciphertext() {
+    let dir = create_temp_dir("wrong_keyfile");
+    let db_path = dir.join("codexmanager.db");
+    let key_path = dir.join(".codexmanager.keyfile");
+
+    {
+        let storage = Storage::open(&db_path).expect("open file storage");
+        storage.init().expect("init schema");
+        storage
+            .insert_account(&Account {
+                id: "acc-wrong-keyfile".to_string(),
+                label: "encrypted".to_string(),
+                issuer: "https://auth.openai.com".to_string(),
+                chatgpt_account_id: None,
+                workspace_id: None,
+                group_name: None,
+                sort: 0,
+                status: "active".to_string(),
+                created_at: now_ts(),
+                updated_at: now_ts(),
+            })
+            .expect("insert account");
+        storage
+            .insert_token(&Token {
+                account_id: "acc-wrong-keyfile".to_string(),
+                id_token: "encrypted-id".to_string(),
+                access_token: "encrypted-access".to_string(),
+                refresh_token: "encrypted-refresh".to_string(),
+                api_key_access_token: Some("encrypted-api-key".to_string()),
+                last_refresh: now_ts(),
+            })
+            .expect("insert encrypted token");
+    }
+
+    fs::write(&key_path, [9u8; 32]).expect("overwrite keyfile with wrong key");
+
+    let err = Storage::open(&db_path).expect_err("wrong keyfile should fail");
+    assert!(err.to_string().contains("解密失败"));
+
+    fs::remove_dir_all(&dir).expect("cleanup temp dir");
 }
 
 #[test]

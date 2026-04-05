@@ -202,8 +202,8 @@ fn gateway_claude_failover_cross_workspace_strips_session_affinity_headers() {
     });
     let err_body = serde_json::to_string(&first_response).expect("serialize first response");
     let ok_body = serde_json::to_string(&second_response).expect("serialize second response");
-    // A 404 can trigger alternate-path + stateless retries before failover. Force those retries to
-    // also 404 so the gateway actually fails over to wsB.
+    // 404 可能触发备选路径 + 无状态重试再故障转移。强制这些重试也返回 404，
+    // 以便网关实际故障转移到 wsB。
     let (upstream_addr, upstream_rx, upstream_join) = start_mock_upstream_sequence(vec![
         (404, err_body.clone()),
         (404, err_body.clone()),
@@ -394,8 +394,8 @@ fn gateway_claude_failover_same_workspace_preserves_session_affinity_headers() {
     });
     let err_body = serde_json::to_string(&first_response).expect("serialize first response");
     let ok_body = serde_json::to_string(&second_response).expect("serialize second response");
-    // A 404 can trigger alternate-path + stateless retries before failover. Force those retries to
-    // also 404 so the gateway actually fails over to the 2nd account (same workspace scope).
+    // 404 可能触发备选路径 + 无状态重试再故障转移。强制这些重试也返回 404，
+    // 以便网关实际故障转移到第 2 个账号（同一 workspace 范围）。
     let (upstream_addr, upstream_rx, upstream_join) = start_mock_upstream_sequence(vec![
         (404, err_body.clone()),
         (404, err_body.clone()),

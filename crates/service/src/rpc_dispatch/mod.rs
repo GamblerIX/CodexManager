@@ -76,7 +76,9 @@ pub(super) fn value_or_error<T: Serialize>(result: Result<T, String>) -> Value {
 
 pub(crate) fn handle_request(req: JsonRpcRequest) -> JsonRpcResponse {
     if req.method == "initialize" {
-        let _ = storage_helpers::initialize_storage();
+        if let Err(err) = storage_helpers::initialize_storage() {
+            return response(&req, crate::error_codes::rpc_error_payload(err));
+        }
         if let Some(storage) = storage_helpers::open_storage() {
             let _ = storage.insert_event(&Event {
                 account_id: None,

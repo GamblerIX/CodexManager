@@ -4,6 +4,17 @@
 仓库：`D:\Github\CodexManager\CodexManager`  
 状态：已完成头脑风暴阶段设计确认，等待用户审阅
 
+> **实施后修正（2026-04-05）**
+>
+> 本设计稿中的 hooks 表述在实现阶段已按 VS Code Agent Mode 的当前官方文档收正。以仓库内实际落地为准：
+>
+> - 使用单文件 `.github/hooks/autoloop.json`
+> - 事件名使用 `SessionStart`、`PostToolUse`、`Stop`
+> - hook 输入字段优先兼容 `tool_name`、`tool_input`、`tool_response`
+> - `Stop` hook 通过 stdout JSON 返回 block / continue 信息，而不是输出裸字符串
+>
+> 下文若仍出现 `session-start.json`、`agent-stop`、`subagent-stop`、`toolName` / `toolArgs` 之类早期草案表述，均以仓库中的最终实现文件为准。
+
 ## 目标
 
 为本仓库安装一套仓库级 GitHub Copilot 工作流，使其在 VS Code Agent Mode 与 Copilot CLI 中能够实现单次会话内的自主迭代，具体采用：

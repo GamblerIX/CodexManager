@@ -98,8 +98,34 @@ if [[ "$CLEAN_DIST" == "true" ]]; then
   remove_dir "$DIST_DIR"
 fi
 
+# 构建前端静态产物（beforeBuildCommand 使用 Windows CMD 语法，在 Linux 上无法执行）
+step "building frontend..."
+run_cmd "pnpm build:desktop" pnpm --dir "$FRONTEND_ROOT" run build:desktop
+
+# 临时移除 Windows 专用的 beforeBuildCommand，构建后恢复
+TAURI_CONF="$TAURI_DIR/tauri.conf.json"
+cp "$TAURI_CONF" "$TAURI_CONF.bak"
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c "
+import json, pathlib
+p = pathlib.Path('$TAURI_CONF')
+c = json.loads(p.read_text(encoding='utf-8'))
+c.get('build', {}).pop('beforeBuildCommand', None)
+p.write_text(json.dumps(c, indent=2, ensure_ascii=False), encoding='utf-8')
+"
+else
+  # 回退到 sed：删除包含 beforeBuildCommand 的行
+  sed -i '/beforeBuildCommand/d' "$TAURI_CONF"
+fi
+
+trap 'mv -f "$TAURI_CONF.bak" "$TAURI_CONF" 2>/dev/null' EXIT
+
 pushd "$TAURI_DIR" >/dev/null
 run_tauri_build
 popd >/dev/null
+
+# 恢复原始 tauri.conf.json
+mv -f "$TAURI_CONF.bak" "$TAURI_CONF"
+trap - EXIT
 
 step "done"

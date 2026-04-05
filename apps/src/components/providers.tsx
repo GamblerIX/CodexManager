@@ -32,7 +32,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
             richColors 
             expand={false} 
             visibleToasts={3}
-            theme="system"
           />
         </TooltipProvider>
       </ThemeProvider>

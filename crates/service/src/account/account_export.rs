@@ -5,6 +5,12 @@ use std::path::{Path, PathBuf};
 
 use crate::storage_helpers::open_storage;
 
+const WINDOWS_RESERVED_FILE_STEMS: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6",
+    "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7",
+    "LPT8", "LPT9",
+];
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AccountExportResult {
@@ -74,6 +80,11 @@ pub(crate) fn export_accounts_to_directory(
             output_path.display()
         )
     })?;
+
+    log::warn!(
+        "账号导出操作已触发，导出文件将包含明文令牌，请注意文件安全 target={}",
+        output_path.display()
+    );
 
     let storage = open_storage().ok_or_else(|| "storage unavailable".to_string())?;
     let accounts = storage.list_accounts().map_err(|err| err.to_string())?;
@@ -192,6 +203,9 @@ fn build_account_export_file_path(
     output_dir.join(format!("{file_stem}.json"))
 }
 
+/// 构建单个账号的导出 JSON。
+/// **安全警告**: 导出文件包含明文令牌（access_token / refresh_token），
+/// 请妥善保管导出文件，避免泄露。
 fn build_account_export_json(
     account: &Account,
     token: &Token,
@@ -234,9 +248,19 @@ fn sanitize_file_stem(value: &str) -> String {
         out.push(ch);
     }
 
-    out.trim_matches(|ch: char| ch == ' ' || ch == '.')
+    let sanitized = out
+        .trim_matches(|ch: char| ch == ' ' || ch == '.')
         .trim()
-        .to_string()
+        .to_string();
+
+    if WINDOWS_RESERVED_FILE_STEMS
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(&sanitized))
+    {
+        return format!("_{sanitized}");
+    }
+
+    sanitized
 }
 
 #[cfg(test)]
@@ -253,5 +277,11 @@ mod tests {
     fn sanitize_file_stem_trims_tailing_space_and_dot() {
         let actual = sanitize_file_stem(" demo. ");
         assert_eq!(actual, "demo");
+    }
+
+    #[test]
+    fn sanitize_file_stem_prefixes_windows_reserved_names() {
+        assert_eq!(sanitize_file_stem("CON"), "_CON");
+        assert_eq!(sanitize_file_stem("nul"), "_nul");
     }
 }

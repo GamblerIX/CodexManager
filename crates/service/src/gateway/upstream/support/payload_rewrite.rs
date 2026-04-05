@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 pub(in super::super) fn body_has_encrypted_content_hint(body: &[u8]) -> bool {
-    // Fast path: avoid JSON parsing unless we hit a recovery path.
+    // 快速路径：仅在命中恢复路径时才进行 JSON 解析。
     std::str::from_utf8(body)
         .ok()
         .is_some_and(|text| text.contains("\"encrypted_content\""))

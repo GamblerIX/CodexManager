@@ -10,6 +10,16 @@
 
 ---
 
+> **实施后修正（2026-04-05）**
+>
+> 本计划中的 hooks 设计在真正落地时已收正为 VS Code Agent Mode 当前官方 schema。仓库最终实现以 `.github/hooks/autoloop.json` 和实际脚本为准：
+>
+> - 事件名：`SessionStart`、`PostToolUse`、`Stop`
+> - 输入字段：优先兼容 `tool_name`、`tool_input`、`tool_response`
+> - `Stop` hook 输出：stdout JSON，而不是裸字符串
+>
+> 因此，下文若仍出现 `sessionStart` / `sessionEnd` / `agentStop` / `subagentStop` / `toolName` / `toolArgs` 等早期草案示例，请一律以仓库中的最终实现文件为准。
+
 > **实现修正说明：** 已批准的设计 spec 中关于 hooks 的两处表述需要在实现时按官方文档修正：
 >
 > 1. 仓库级 hooks 应实现为 `.github/hooks/` 下“任意命名的 JSON 配置文件”，而不是每个事件一个固定文件名。

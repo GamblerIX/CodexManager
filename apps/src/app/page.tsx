@@ -203,7 +203,7 @@ export default function DashboardPage() {
               sub="额度耗尽或授权失效"
             />
 
-            <Card className="overflow-hidden border-none bg-primary/10 shadow-md backdrop-blur-md transition-all hover:scale-[1.02]">
+            <Card className="dashboard-pool-card overflow-hidden border-none bg-primary/10 shadow-md backdrop-blur-md transition-all hover:scale-[1.02]">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-primary">账号池剩余</CardTitle>
                 <PieChart className="h-4 w-4 text-primary" />

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod crypto;
 pub mod rpc;
 pub mod storage;
 pub mod usage;

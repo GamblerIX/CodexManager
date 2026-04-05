@@ -40,19 +40,20 @@ pub(crate) fn apply_env_overrides_to_process(
         if let Some(value) = next.get(&key) {
             if value.trim().is_empty() {
                 if let Some(original) = baseline.get(&key).and_then(|value| value.clone()) {
-                    std::env::set_var(&key, original);
+                    // SAFETY: 环境变量覆盖在用户主动操作时触发，风险已知
+                    unsafe { std::env::set_var(&key, original) };
                 } else {
-                    std::env::remove_var(&key);
+                    unsafe { std::env::remove_var(&key) };
                 }
             } else {
-                std::env::set_var(&key, value);
+                unsafe { std::env::set_var(&key, value) };
             }
             continue;
         }
         if let Some(original) = baseline.get(&key).and_then(|value| value.clone()) {
-            std::env::set_var(&key, original);
+            unsafe { std::env::set_var(&key, original) };
         } else {
-            std::env::remove_var(&key);
+            unsafe { std::env::remove_var(&key) };
         }
     }
 }

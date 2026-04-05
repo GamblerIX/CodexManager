@@ -144,14 +144,14 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
   const queryClient = useQueryClient();
   const loginPollTokenRef = useRef(0);
 
-  // Login Form
+  // 登录表单
   const [tags, setTags] = useState("");
   const [note, setNote] = useState("");
   const [group, setGroup] = useState("");
   const [loginUrl, setLoginUrl] = useState("");
   const [manualCallback, setManualCallback] = useState("");
 
-  // Bulk Import
+  // 批量导入
   const [bulkContent, setBulkContent] = useState("");
 
   const resetModalState = useCallback(() => {

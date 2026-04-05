@@ -24,9 +24,10 @@ fn resolve_redirect_uri_prefers_login_server() {
     let prev_login = std::env::var("CODEXMANAGER_LOGIN_ADDR").ok();
     let prev_service = std::env::var("CODEXMANAGER_SERVICE_ADDR").ok();
 
-    std::env::remove_var("CODEXMANAGER_REDIRECT_URI");
-    std::env::set_var("CODEXMANAGER_LOGIN_ADDR", "127.0.0.1:0");
-    std::env::set_var("CODEXMANAGER_SERVICE_ADDR", "localhost:48760");
+    // SAFETY: 测试代码，不存在多线程并发调用环境变量的风险。
+    unsafe { std::env::remove_var("CODEXMANAGER_REDIRECT_URI"); }
+    unsafe { std::env::set_var("CODEXMANAGER_LOGIN_ADDR", "127.0.0.1:0"); }
+    unsafe { std::env::set_var("CODEXMANAGER_SERVICE_ADDR", "localhost:48760"); }
 
     let uri = resolve_redirect_uri().expect("redirect uri");
     let url = Url::parse(&uri).expect("parse redirect uri");
@@ -36,16 +37,16 @@ fn resolve_redirect_uri_prefers_login_server() {
     assert_eq!(url.path(), "/auth/callback");
 
     match prev_redirect {
-        Some(value) => std::env::set_var("CODEXMANAGER_REDIRECT_URI", value),
-        None => std::env::remove_var("CODEXMANAGER_REDIRECT_URI"),
+        Some(value) => unsafe { std::env::set_var("CODEXMANAGER_REDIRECT_URI", value) },
+        None => unsafe { std::env::remove_var("CODEXMANAGER_REDIRECT_URI") },
     }
     match prev_login {
-        Some(value) => std::env::set_var("CODEXMANAGER_LOGIN_ADDR", value),
-        None => std::env::remove_var("CODEXMANAGER_LOGIN_ADDR"),
+        Some(value) => unsafe { std::env::set_var("CODEXMANAGER_LOGIN_ADDR", value) },
+        None => unsafe { std::env::remove_var("CODEXMANAGER_LOGIN_ADDR") },
     }
     match prev_service {
-        Some(value) => std::env::set_var("CODEXMANAGER_SERVICE_ADDR", value),
-        None => std::env::remove_var("CODEXMANAGER_SERVICE_ADDR"),
+        Some(value) => unsafe { std::env::set_var("CODEXMANAGER_SERVICE_ADDR", value) },
+        None => unsafe { std::env::remove_var("CODEXMANAGER_SERVICE_ADDR") },
     }
     reset_login_server_state();
 }
@@ -68,8 +69,8 @@ fn login_server_reports_port_in_use() {
     drop(listener_v4);
     drop(listener_v6);
     match prev_login {
-        Some(value) => std::env::set_var("CODEXMANAGER_LOGIN_ADDR", value),
-        None => std::env::remove_var("CODEXMANAGER_LOGIN_ADDR"),
+        Some(value) => unsafe { std::env::set_var("CODEXMANAGER_LOGIN_ADDR", value) },
+        None => unsafe { std::env::remove_var("CODEXMANAGER_LOGIN_ADDR") },
     }
     reset_login_server_state();
 }
@@ -80,13 +81,13 @@ fn login_server_rejects_non_loopback_by_default() {
     reset_login_server_state();
     let prev_allow = std::env::var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR").ok();
 
-    std::env::remove_var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR");
+    unsafe { std::env::remove_var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR"); }
     let err = ensure_login_server_with_addr("0.0.0.0:1455").expect_err("should reject");
     assert!(err.contains("loopback"));
 
     match prev_allow {
-        Some(value) => std::env::set_var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR", value),
-        None => std::env::remove_var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR"),
+        Some(value) => unsafe { std::env::set_var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR", value) },
+        None => unsafe { std::env::remove_var("CODEXMANAGER_ALLOW_NON_LOOPBACK_LOGIN_ADDR") },
     }
     reset_login_server_state();
 }
@@ -139,14 +140,14 @@ fn login_start_fails_when_login_server_cannot_bind() {
     reset_login_server_state();
     let prev_login = std::env::var("CODEXMANAGER_LOGIN_ADDR").ok();
 
-    std::env::set_var("CODEXMANAGER_LOGIN_ADDR", "0.0.0.0:1455");
+    unsafe { std::env::set_var("CODEXMANAGER_LOGIN_ADDR", "0.0.0.0:1455"); }
 
     let err = ensure_login_server_with_addr("0.0.0.0:1455").expect_err("should fail");
     assert!(err.contains("loopback"));
 
     match prev_login {
-        Some(value) => std::env::set_var("CODEXMANAGER_LOGIN_ADDR", value),
-        None => std::env::remove_var("CODEXMANAGER_LOGIN_ADDR"),
+        Some(value) => unsafe { std::env::set_var("CODEXMANAGER_LOGIN_ADDR", value) },
+        None => unsafe { std::env::remove_var("CODEXMANAGER_LOGIN_ADDR") },
     }
     reset_login_server_state();
 }
